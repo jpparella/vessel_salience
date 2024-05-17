@@ -6,14 +6,11 @@ Projeto de processamento de imagens utilizando PYTHON - Criação de métrica pa
 
 Essas instruções permitirão que você obtenha uma cópia do projeto em operação na sua máquina local para fins de desenvolvimento e teste.
 
-Consulte **[Implantação](#-implanta%C3%A7%C3%A3o)** para saber como implantar o projeto.
-
 ### 📋 Pré-requisitos
 
-De que coisas você precisa para instalar o software e como instalá-lo?
 
 ```
-PYTHON 3.12 ou superior
+PYTHON 3.12
 matplotlib
 numpy
 pilimg
@@ -23,7 +20,11 @@ skimage
 scipy
 shapely
 pyvane(included)
-natsort
+networkx 
+natsort 
+oiffile 
+czifile 
+scikit-image 
 ```
 
 
@@ -33,62 +34,43 @@ natsort
 Para executar os testes pode ser feito o passo a passo:
 
 
-### 🔩 Analise os testes de ponta a ponta
+### 🔩 Geração de imagens (image_augmentation)
 
-Explique que eles verificam esses testes e porquê.
+Para executar é necessário primeiro ter a imagem normal e uma imagem label, então deve ser informado o caminho para elas no seguinte local.
+Observação: é necessário que a imagem de label seja binária, caso não seja pode causar problemas, mas talvez as 3 linhas sequentes possam resolver, caso o algoritmo apresente erro ou não entregue algo corretamente, verifique o tipo de imagem.
+![img_1](\img_examples\img_1.png)
 
-```
-Dar exemplos
-```
+Após definir a imagem que será modificada, é preciso definir qual os parâmetros utilizados para modificar a imagem, sendo eles destacados em VERDE na imagem:
+Observação: Caso não saiba quais parâmetros utilizar, em vermelho estão destacadas linhas de código responsável por exibir alguns dados que podem ajudar a definir os parâmetros, como por exemplo o intervalo de tamanho para região de queda deve estar dentro do tamanho máximo do vaso, sendo menor que esse tamanho. Para descobrir quantos vasos contem na imagem pode ser feito o comando "len()" na lista "tamanhoVasos". Essa lista contém todos os vasos, mas nem todos irão satisfazer os requisitos para que seja feita a modificação nele, então talvez seja necessário colocar valores menores que isso.
+![img_2](\img_examples\img_2.png) 
 
-### ⌨️ E testes de estilo de codificação
 
-Explique que eles verificam esses testes e porquê.
+#### Exemplos
 
-```
-Dar exemplos
-```
+Imagem de exemplo de modificação, no caso da imagem foi plotado também a identificação do centro da região, para que não seja plotada essa região, defina o parâmetro como ```highlight_center = false```
+![img_3](\img_examples\img_3.png) 
 
-## 📦 Implantação
-
-Adicione notas adicionais sobre como implantar isso em um sistema ativo
+### 🔩 Métrica Avaliação de imagens ()
+Construindo exemplo
 
 ## 🛠️ Construído com
 
 Mencione as ferramentas que você usou para criar seu projeto
 
-* [Dropwizard](http://www.dropwizard.io/1.0.2/docs/) - O framework web usado
-* [Maven](https://maven.apache.org/) - Gerente de Dependência
-* [ROME](https://rometools.github.io/rome/) - Usada para gerar RSS
+* [matplotlib](https://matplotlib.org/) - Manipulação de imagens
+* [pyvane](https://github.com/chcomin/pyvane) - Criação dos grafos e extração de dados
+* [skimage](https://scikit-image.org/) - Criação do esqueleto
+* [opencv](https://pypi.org/project/opencv-python/) - Manipulação de imagens / Extração de contornos
+* [numpy](https://numpy.org/) - Manipulação de imagens 
+* [PIL](https://python-pillow.org/) - Manipulação de imagens 
+* [scipy](https://scipy.org/) - Convolução, dilatação e transformadas em geral nas imagens
+* [scipy](https://scipy.org/) - Convolução, dilatação e transformadas em geral nas imagens
 
-## 🖇️ Colaborando
-
-Por favor, leia o [COLABORACAO.md](https://gist.github.com/usuario/linkParaInfoSobreContribuicoes) para obter detalhes sobre o nosso código de conduta e o processo para nos enviar pedidos de solicitação.
-
-## 📌 Versão
-
-Nós usamos [SemVer](http://semver.org/) para controle de versão. Para as versões disponíveis, observe as [tags neste repositório](https://github.com/suas/tags/do/projeto). 
 
 ## ✒️ Autores
 
-Mencione todos aqueles que ajudaram a levantar o projeto desde o seu início
 
-* **Um desenvolvedor** - *Trabalho Inicial* - [umdesenvolvedor](https://github.com/linkParaPerfil)
-* **Fulano De Tal** - *Documentação* - [fulanodetal](https://github.com/linkParaPerfil)
-
-Você também pode ver a lista de todos os [colaboradores](https://github.com/usuario/projeto/colaboradores) que participaram deste projeto.
-
-## 📄 Licença
-
-Este projeto está sob a licença (sua licença) - veja o arquivo [LICENSE.md](https://github.com/usuario/projeto/licenca) para detalhes.
-
-## 🎁 Expressões de gratidão
-
-* Conte a outras pessoas sobre este projeto 📢;
-* Convide alguém da equipe para uma cerveja 🍺;
-* Um agradecimento publicamente 🫂;
-* etc.
+* **João Pedro Parella** - *Desenvolvedor* - [João Pedro Parella](https://github.com/jpparella)
+* **Cesar Henrique Comin** - *Orientador e desenvolvedor* - [Cesar H Comin](https://github.com/chcomin)
 
 
----
-⌨️ com ❤️ por [Armstrong Lohãns](https://gist.github.com/lohhans) 😊

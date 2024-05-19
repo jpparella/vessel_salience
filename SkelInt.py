@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from PIL import Image
 from skimage.morphology import skeletonize
 from scipy.spatial import KDTree
+import scipy.ndimage as ndi
 import cv2
 import shapely
 from skimage import draw
@@ -10,41 +11,30 @@ from pyvane.graph.creation import create_graph
 from pyvane.graph import adjustment as net_adjust
 from pyvane.image import Image as Image_pv
 from pyvane.util import graph_to_img
-import scipy.ndimage as ndi
+
 
 def load_data(bin_path, img_path):
     """Load some test data."""
 
     img_bin = np.array(Image.open(bin_path),dtype=np.uint8)
-
     img_gray = plt.imread(img_path)
-
-
     # print(np.unique(img_bin))
     img_skel = skeletonize(img_bin)
-    
-
     img_skel_pv = Image_pv(img_skel)
-
     graph = create_graph(img_skel_pv)
-
     graph_simple = net_adjust.simplify(graph)
-
     graph_final = net_adjust.adjust_graph(graph_simple, length_threshold=5)
-
 
     img_graph = graph_to_img(graph_final, img_shape=img_bin.shape, node_color=(1, 1, 1), node_pixels_color=(0, 0, 0),
                             edge_color=(1, 1, 1))
 
     img_graph = img_graph[:,:,0]
 
-
     contours, _ = cv2.findContours(img_bin, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
 
     # Remove additional dimension from each contour and invert x and y. 
     # contour[i] contains a pixel at position (row, col)
     contour = np.concatenate([contour[:,0,::-1] for contour in contours])
-
 
     return img_bin,img_gray, img_skel, graph_final, img_graph, contour
 
@@ -52,34 +42,20 @@ def load_data_iou(bin_path, img_path):
     """Load some test data."""
 
     img_bin = np.array(Image.open(bin_path),dtype=np.uint8)
-
     img_gray = plt.imread(img_path)
-
-
     # print(np.unique(img_bin))
     img_skel = skeletonize(img_bin)
-    
-
     img_skel_pv = Image_pv(img_skel)
-
     graph = create_graph(img_skel_pv)
-
     graph_simple = net_adjust.simplify(graph)
-
     graph_final = net_adjust.adjust_graph(graph_simple, length_threshold=5)
-
-
-
     contours, _ = cv2.findContours(img_bin, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
 
     # Remove additional dimension from each contour and invert x and y. 
     # contour[i] contains a pixel at position (row, col)
     contour = np.concatenate([contour[:,0,::-1] for contour in contours])
 
-
     return img_bin,img_gray, graph_final, contour
-
-
 
 def get_closest_points(graph, contour, k=20,showWarnings = False):
     """For each skeleton point, get two points in the contour that are closest to the skeleton point.
@@ -127,7 +103,6 @@ def get_closest_points(graph, contour, k=20,showWarnings = False):
             point_map[point_idx] = (nei1_idx, nei2_idx)
 
     return point_map
-
 
 def get_closest_points2(graph, contour, k=20,showWarnings= False):
     """For each skeleton point, get two points in the contour that are closest to the skeleton point.
@@ -318,6 +293,7 @@ def plot_sampling_regions(int_dict, img_bin, img_graph, n=20):
         plt.scatter(x, y, s=2, color=colors2[idx_c])
 
 def interpret(int_dict):
+
     ret_dict = {}
     dct_c = int_dict.copy()
     diff = []
@@ -343,6 +319,7 @@ def interpret(int_dict):
     return ret_dict,diff_mean,diff_min,diff_norm_mean,diff_norm_min
 
 def interpret2(int_dict):
+
     ret_dict = []
     dct_c = int_dict.copy()
     diff = []
@@ -389,9 +366,9 @@ def interpret2(int_dict):
     diff_norm_min = np.min(diff_norm)
 
     return ret_dict,diff_mean,diff_min,diff_norm_mean,diff_norm_min
-    
-        
+  
 def image_process(img_bin,img_ori,graph,ret_dict,limiar):
+
     dct_c = ret_dict.copy()
     teste = np.zeros(img_bin.shape)
 
@@ -420,8 +397,8 @@ def image_process(img_bin,img_ori,graph,ret_dict,limiar):
     #     if (diff_p <= limiar):
     #         plt.scatter(pixel[1], pixel[0], s=2, color='C0')
 
-
 def image_process2(img_bin,img_ori,graph,ret_dict,limiar,plot = False):
+
     dct_c = ret_dict.copy()
     teste = np.zeros(img_bin.shape)
 
@@ -454,8 +431,9 @@ def image_process2(img_bin,img_ori,graph,ret_dict,limiar,plot = False):
     #         plt.scatter(pixel[1], pixel[0], s=2, color='C0')
 
 def get_segments(graph,ret_dict, img_origin, img_label):
-    '''Cria imagem na qual cada segmento de vaso possui um id diferente. Útil para isolar
-    apenas o vaso que está sendo processado. Depois disso é calculado o valor de dificuldade para cada pixel do vaso em questão'''
+    """Cria imagem na qual cada segmento de vaso possui um id diferente. Útil para isolar
+    apenas o vaso que está sendo processado. Depois disso é calculado o valor de dificuldade para cada pixel do vaso em questão"""
+
     valid = 0
     obj_listas = list(graph.edges(data=True))
     img_graph = np.zeros_like(img_origin, dtype=float) 
@@ -477,14 +455,14 @@ def get_segments(graph,ret_dict, img_origin, img_label):
     img_exp = img_exp*(img_label>0)
     return img_exp
 
-
 def difficult_avaliate(img_lv,img_lbl,threshold):
     img_hard = (img_lv <= threshold) & (img_lbl > 0)
     num_px_hard = img_hard.sum()
+
     return num_px_hard
-    
-    
+     
 def iou_lcr(img_lv,img_lbl,pred,threshold):
+
     #print(np.min(img_lv),np.max(img_lv))
     img_hard = (img_lv <= threshold) & (img_lbl > 0)
     if (img_hard.sum() == 0):
@@ -499,6 +477,7 @@ def iou_lcr(img_lv,img_lbl,pred,threshold):
     return iou
 
 def iou_lcr_n(img_lv,img_lbl,pred,threshold):
+
     ious = []
     pxs_hard = []
     for thr in threshold:        
@@ -511,8 +490,8 @@ def iou_lcr_n(img_lv,img_lbl,pred,threshold):
 
     return ious,pxs_hard
 
-
 def process_means(int_dict,n=3):
+
     total_r=[];
     
     for idx_path, int_dict_path in enumerate(int_dict):
@@ -532,13 +511,16 @@ def process_means(int_dict,n=3):
     return int_dict;    
 
 def process_means_2(int_dict,total_mean,total_std):    
+
     for idx_path, int_dict_path in enumerate(int_dict):
         for idx_pix, _ in enumerate(int_dict_path):        
             int_dict[idx_path][idx_pix]['diff_norm_p_div_mean']=int_dict[idx_path][idx_pix]['diff_norm_p']/total_mean
             int_dict[idx_path][idx_pix]['diff_norm_p_div_std']=(int_dict[idx_path][idx_pix]['diff_norm_p']-total_mean)/total_std
+
     return int_dict;    
 
 def prepare_hist(int_dict):
+
     hist_values_norm_p = []
     hist_values_div_mean = []
     for idx_path, int_dict_path in enumerate(int_dict):        
@@ -549,6 +531,7 @@ def prepare_hist(int_dict):
     return hist_values_norm_p,hist_values_div_mean;    
     
 def full_process_unique(bin_path, img_path,k,radius,limiar):
+
     img_bin,img_gray, img_skel, graph, img_graph, contour = load_data(bin_path,img_path)
     # k = 50          # Number of contour points to analyse for each skeleton pixel
     # radius = 4      # Radius of the background region to get for each skeleton pixel
@@ -557,17 +540,13 @@ def full_process_unique(bin_path, img_path,k,radius,limiar):
 
     ret_dict,diff_mean,diff_min,diff_norm_mean,diff_norm_min = interpret2(int_dict_n)
     ret_dict_n = process_means(ret_dict,n=15)
-
     image_process2(img_bin,img_gray,graph,ret_dict_n,limiar)
-
     img_lv = get_segments(graph,ret_dict_n, img_gray, img_bin)
-
-    
 
     return img_lv
             
-
 def full_process_iou_unique(bin_path, img_path,k,radius,limiar,pred):
+
     img_bin,img_gray,  graph,  contour = load_data_iou(bin_path,img_path)
     # k = 50          # Number of contour points to analyse for each skeleton pixel
     # radius = 4      # Radius of the background region to get for each skeleton pixel
@@ -590,6 +569,7 @@ def full_process_iou_unique(bin_path, img_path,k,radius,limiar,pred):
     return iou,img_lv,num_px_hard
 
 def full_process_iou(bin_path, img_path,k,radius,limiar,pred):
+    
     img_bin,img_gray,  graph,  contour = load_data_iou(bin_path,img_path)
     # k = 50          # Number of contour points to analyse for each skeleton pixel
     # radius = 4      # Radius of the background region to get for each skeleton pixel

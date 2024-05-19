@@ -1,18 +1,19 @@
-from pyvane.graph.creation import create_graph
+import random
+import numpy as np
+import matplotlib.pyplot as plt
+from PIL import Image as pilimg
+import scipy.ndimage as ndi
+import skimage.morphology
+import skimage.draw
+import cv2
+from pyvane.graph.creation import create_graph as create_graph_pv
 from pyvane.graph import adjustment as net_adjust
 from pyvane.image import Image
 from pyvane import util
-import skimage.morphology
-import cv2
-import matplotlib.pyplot as plt
-import numpy as np
-from PIL import Image as pilimg
-import skimage.draw
-import random
-import scipy.ndimage as ndi
-import json
 
-def extract_full_lenght(graph):
+
+def extract_full_length(graph):
+
     obj_listas = list(graph.edges(data=True))
 
     segment_lenght = []    
@@ -26,14 +27,13 @@ def extract_full_lenght(graph):
     return segment_lenght,minn,maxx
         
 def dist_p(points, p):
-    '''Distance between each point in `points` and a given point `p`.'''
+    """Distance between each point in `points` and a given point `p`."""
 
     return np.sqrt(np.sum((points - p)**2, axis=1))
 
 def dist_without_center(points, idxpp1, idxpp2):
-    '''distance between 2 points to all other points, where the area between these two points is returned as 0'''
-    #* Várias mudanças nesta função, para considerar distância ao longo do segmento
-    # e por questão de eficiência.
+    """distance between 2 points to all other points, where the area between these two points is returned as 0"""
+
     path_length = path_length_cum(points)
     first_seg = path_length[idxpp1] - path_length[:idxpp1]
     first_seg /= first_seg[0]
@@ -45,26 +45,24 @@ def dist_without_center(points, idxpp1, idxpp2):
     return dist_vec
 
 def path_length(path):
+
     dpath = np.diff(path, axis=0)
     dlengths = np.sqrt(np.sum(dpath**2, axis=1))
-
-    
     path_length = np.sum(dlengths)
 
     return path_length
     
 def path_length_cum(paths):
+
     dpath = np.diff(paths, axis = 0)
-   
     dlengths = np.sqrt(np.sum(dpath**2, axis=1))
-    
     path_length = np.cumsum(dlengths)
-    
     path_length = np.array([0]+path_length.tolist())
     
     return path_length
 
-def pointFromDist(points, index_pc, leng):
+def point_from_dist(points, index_pc, leng):
+
     returns = ([])
     pc = points[index_pc]
     res = path_length_cum(points)
@@ -76,8 +74,8 @@ def pointFromDist(points, index_pc, leng):
     return indexp1,indexp2
     
 def get_segments(graph, img_origin, img_label):
-    '''Cria imagem na qual cada segmento de vaso possui um id diferente. Útil para isolar
-    apenas o vaso que está sendo processado.'''
+    """Cria imagem na qual cada segmento de vaso possui um id diferente. Útil para isolar
+    apenas o vaso que está sendo processado."""
 
     obj_listas = list(graph.edges(data=True))
     img_graph = np.zeros_like(img_origin, dtype=int) - 1
@@ -95,7 +93,6 @@ def get_segments(graph, img_origin, img_label):
 
 def create_image(rqi_len_param_interv, min_len_interv, n_rqi_interv,graph,img_label,img_origin,median_threshold,rnd_seed=None,highlight_center=False):
     
-
     n_rqi = random.randint(n_rqi_interv[0],n_rqi_interv[1])
     obj_listas = list(graph.edges(data=True))
     img_segs = get_segments(graph, img_origin, img_label)
@@ -107,7 +104,6 @@ def create_image(rqi_len_param_interv, min_len_interv, n_rqi_interv,graph,img_la
     # # plt.imshow(seg.detach().numpy(), cmap='gray')
     # plt.show()
 
-      
     if (rnd_seed):
         random.seed(rnd_seed)
     
@@ -122,9 +118,7 @@ def create_image(rqi_len_param_interv, min_len_interv, n_rqi_interv,graph,img_la
         
         min_len = random.randint(min_len_interv[0],max_min_len)
         
-        list_valid_idx,idx_vector = onlyValidIndexed(obj_listas,rqi_len_param//2)  
-
-        
+        list_valid_idx,idx_vector = only_valid_indexed(obj_listas,rqi_len_param//2)  
         
         index1 = random.randint(0,len(list_valid_idx)-1)
         list_valid = list_valid_idx[index1][1]
@@ -137,7 +131,6 @@ def create_image(rqi_len_param_interv, min_len_interv, n_rqi_interv,graph,img_la
         #if (obj_listas[list_valid_idx[index1][0]])
         
         pc = list_valid[index2]
-        
         
         #PONTOS QUE PERTENCEM MAS NÃO SAO VALIDOS PARA SER PC
         idx_notvalid = list_valid_idx[index1][0]
@@ -163,7 +156,7 @@ def create_image(rqi_len_param_interv, min_len_interv, n_rqi_interv,graph,img_la
     
         idxpc = obj_cords.index(pc)
         #INDICE P1 E P2
-        idxp1,idxp2 = pointFromDist(obj_cords,idxpc,rqi_len_param//2)
+        idxp1,idxp2 = point_from_dist(obj_cords,idxpc,rqi_len_param//2)
         
         #P1 = PONTO INICIAL DA RQI
         #P2 = PONTO FINAL DA RQI
@@ -174,7 +167,6 @@ def create_image(rqi_len_param_interv, min_len_interv, n_rqi_interv,graph,img_la
         newCrop = np.zeros(img_label.shape,dtype=np.uint8)
         
         #IMAGEM QUE VAI SER RETORNADA COM AS ALTERAÇÕES
-        
         
         #IMAGEM DO ESQUELETO COM QUEDA DE INTENSIDADE
         newCropDyn = np.zeros(newCrop.shape, dtype=float)
@@ -200,7 +192,7 @@ def create_image(rqi_len_param_interv, min_len_interv, n_rqi_interv,graph,img_la
             newCrop[point] = 128
             
         #INDICE PP1, PP2. 
-        idxpp1,idxpp2 = pointFromDist(obj_cords,idxpc,min_len//2)
+        idxpp1,idxpp2 = point_from_dist(obj_cords,idxpc,min_len//2)
         
         #PP1 = INICIO DA ÁREA MINIMA DA RQI(BACKGROUND)
         #PP2 = FIM DA ÁREA MINIMA DA RQI(BACKGROUND)    
@@ -228,7 +220,7 @@ def create_image(rqi_len_param_interv, min_len_interv, n_rqi_interv,graph,img_la
         newCrop_mod, debug_expand = expand_line(newCrop,newCropDyn,oriCrop,lblCrop,img_seg_crop,median_threshold,i_rqi)#dilatação
         
         img_new = img_new.copy()
-        img_new = cropAlter(img_new,newCrop_mod,int(pc[0]),int(pc[1]),rqi_len_param)
+        img_new = crop_alter(img_new,newCrop_mod,int(pc[0]),int(pc[1]),rqi_len_param)
     
         #marca a area proxima ao centro da RQI para localizar na imagem final
         if(highlight_center):     
@@ -245,33 +237,22 @@ def create_image(rqi_len_param_interv, min_len_interv, n_rqi_interv,graph,img_la
                  vessel_int_new, obj_cords, idxpc, idxp1, idxp2, idxpp1, idxpp2, debug_expand,newCrop_mod)
         debug_full.append(debug)
         im = pilimg.fromarray(img_new)
-        
-        
-       
     
     return img_new, debug_full
         
-    
-
 def image_augmentation(graph,img_label,img_origin, rqi_len_param,min_len,median_threshold,rnd_seed=None,highlight_center=False):
-
-    #* Em toda esta função mudei o uso de rqi_len para rqi_len_param. rqi_len não é mais usado
-    #rqi_len = rqi_len_param - min_len#colocar o rqi_len_param como tamanho total, e subtrair o min_len
     
     obj_listas = list(graph.edges(data=True))
     img_segs = get_segments(graph, img_origin, img_label)
 
-    list_valid,idx_vector = onlyValid(obj_listas,rqi_len_param//2)       
+    list_valid,idx_vector = only_valid(obj_listas,rqi_len_param//2)       
     if (rnd_seed):
         random.seed(rnd_seed)
     
     index1 = random.randint(0,len(list_valid)-1)
-
     index2 = random.randint(0,len(list_valid[index1])-1)
    
-    
     pc = list_valid[index1][index2]
-    
     
     #PONTOS QUE PERTENCEM MAS NÃO SAO VALIDOS PARA SER PC
     idx_notvalid = idx_vector.index(list_valid[index1])
@@ -292,7 +273,7 @@ def image_augmentation(graph,img_label,img_origin, rqi_len_param,min_len,median_
 
     idxpc = obj_cords.index(pc)
     #INDICE P1 E P2
-    idxp1,idxp2 = pointFromDist(obj_cords,idxpc,rqi_len_param//2)
+    idxp1,idxp2 = point_from_dist(obj_cords,idxpc,rqi_len_param//2)
     
     #P1 = PONTO INICIAL DA RQI
     #P2 = PONTO FINAL DA RQI
@@ -320,7 +301,7 @@ def image_augmentation(graph,img_label,img_origin, rqi_len_param,min_len,median_
         newCrop[point] = 128
         
     #INDICE PP1, PP2. 
-    idxpp1,idxpp2 = pointFromDist(obj_cords,idxpc,min_len//2)
+    idxpp1,idxpp2 = point_from_dist(obj_cords,idxpc,min_len//2)
     
     #PP1 = INICIO DA ÁREA MINIMA DA RQI(BACKGROUND)
     #PP2 = FIM DA ÁREA MINIMA DA RQI(BACKGROUND)    
@@ -348,7 +329,7 @@ def image_augmentation(graph,img_label,img_origin, rqi_len_param,min_len,median_
     newCrop_mod, debug_expand = expand_line(newCrop,newCropDyn,oriCrop,lblCrop,img_seg_crop,median_threshold)#dilatação
     
     img_new = img_origin.copy()
-    img_new = cropAlter(img_new,newCrop_mod,int(pc[0]),int(pc[1]),rqi_len_param)
+    img_new = crop_alter(img_new,newCrop_mod,int(pc[0]),int(pc[1]),rqi_len_param)
 
     #marca a area proxima ao centro da RQI para localizar na imagem final
     if(highlight_center):     
@@ -366,8 +347,9 @@ def image_augmentation(graph,img_label,img_origin, rqi_len_param,min_len,median_
 
     return img_new, debug
     
-#retorna apenas coordenadas válidas para o centro do RQI    
-def onlyValid(obj_listas,cut):
+def only_valid(obj_listas,cut):
+    """retorna apenas coordenadas válidas para o centro do RQI"""
+
     validPixels = ([])
     aux = ([])
     idx_ = ([])
@@ -385,7 +367,8 @@ def onlyValid(obj_listas,cut):
         aux = ([])
     return validPixels,idx_
 
-def onlyValidIndexed(obj_listas,cut):
+def only_valid_indexed(obj_listas,cut):
+
     validPixels = ([])
     aux = ([])
     idx_ = ([])
@@ -405,47 +388,51 @@ def onlyValidIndexed(obj_listas,cut):
             validPixels.append([index_idx,aux])
         index_idx=index_idx+1         
         aux = ([])
+
     return validPixels,idx_
-    
-def createGraph(img,adjust):
+
+def create_graph(img, adjust):
+
     img_bin = np.clip(img, 0, 1)    
     img_skel = skimage.morphology.skeletonize(img_bin, method='lee')
     # Convert back to PyVaNe
     data_skel = Image(img_skel)
-    proto_graph = create_graph(data_skel)
+    proto_graph = create_graph_pv(data_skel)
     if (adjust):
         graph_vessel = net_adjust.adjust_graph(proto_graph, 0)
         return graph_vessel
+    
     return proto_graph
 
-#funcao de corte da imagem para facilitar processamento da RQI
 def crop(img,p1,p2,rqi_len):
-    #* Uso do max para evitar que o crop seja negativo
+    """funcao de corte da imagem para facilitar processamento da RQI"""
+
     param1 = max([0, p1 -rqi_len])
     param2 = p1 +rqi_len
-    
     param3 = max([0, p2 -rqi_len])
     param4 = p2 +rqi_len
-    
     imgRetorno = img[param1:param2,param3:param4]
+
     return imgRetorno
 
-#funcao de substituição da imagem original pela imagem modificada, é trocado a area cortada da imagem pela nova imagem em tamanho menor
-def cropAlter(img,img2,p1,p2,rqi_len):    
+def crop_alter(img,img2,p1,p2,rqi_len):  
+    """funcao de substituição da imagem original pela imagem modificada, é trocado a area cortada da imagem pela nova imagem em tamanho menor"""
+
     param1 = max([0, p1 -rqi_len])
     param2 = p1 +rqi_len
-    
     param3 = max([0, p2 -rqi_len])
     param4 = p2 +rqi_len
 
     img[param1:param2,param3:param4] = img2
+
     return img
 
-def calcMedian(img,mask):
+def calc_median(img,mask):
     return np.mean(img[mask>0])
 
-#retorna vizinhos de um pixel
 def vizinhos(cord_center,shape):
+    """retorna vizinhos de um pixel"""
+
     retorno = []
     
     #-1 -1  0 -1  +1 -1
@@ -478,7 +465,7 @@ def vizinhos(cord_center,shape):
     return retorno
 
 def expand_line(img_line,img_linedyn,img_origin,img_label,img_seg_crop,median_threshold,idx=0):    
-    '''
+    """
     Variáveis:
     img_line: esqueleto da RQI
     img_linedyn: esqueleto da RQI com queda de intensidade normalizada
@@ -486,7 +473,7 @@ def expand_line(img_line,img_linedyn,img_origin,img_label,img_seg_crop,median_th
     img_origin: imagem dos vasos
     img_label: imagem com rótulos
     Todas as imagens possuem um crop    
-    '''
+    """
 
     #* Mudei várias coisas nesta função
 
@@ -499,13 +486,13 @@ def expand_line(img_line,img_linedyn,img_origin,img_label,img_seg_crop,median_th
     #img_exp = np.zeros_like(img_line, dtype=float)        
     #img_bin = img_bin * img_label
 
-    #vesValue = calcMedian(img_origin,(img_label == 255))
+    #vesValue = calc_median(img_origin,(img_label == 255))
     
     img_dist, (img_inds_r, img_inds_c) = ndi.distance_transform_edt(np.logical_not(img_line), return_indices=True)
     
     #img_dist = img_dist/np.max(img_dist)
 
-    bckValue = calcMedian(img_origin,(img_label != 255))
+    bckValue = calc_median(img_origin,(img_label != 255))
 
     img_origin_bck = img_origin - bckValue
 
@@ -652,7 +639,7 @@ def expand_line(img_line,img_linedyn,img_origin,img_label,img_seg_crop,median_th
         #--------linha responsável por trocar a área RQI pelo fundo                
             img_ret[coordsLoc] = img_ret[coordsLocNew] 
             break
-
     
     debug = img_exp, img_ret_loc, outPutConv, img_only_back, coordsLoc, coordsLocNew, contorno
+
     return img_ret, debug

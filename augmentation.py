@@ -13,18 +13,19 @@ from pyvane import util
 
 
 def extract_full_length(graph):
+    """Extract edge segments length."""
 
-    obj_listas = list(graph.edges(data=True))
+    graph_edges = list(graph.edges(data=True))
 
-    segment_lenght = []    
-    for lista in obj_listas:           
-        obj_cords = lista[2]['path']
-        tamanho = path_length([obj_cords[0],obj_cords[-1]])
-        segment_lenght.append(tamanho) 
-    minn =  min(segment_lenght)
-    maxx =  max(segment_lenght)
-    
-    return segment_lenght,minn,maxx
+    segment_length = []
+    for graph_edge in graph_edges:
+        edge_path = graph_edge[2]['path']
+        length = get_path_length([edge_path[0], edge_path[-1]])
+        segment_length.append(length)
+    min_v =  min(segment_length)
+    max_v =  max(segment_length)
+
+    return segment_length, min_v, max_v
         
 def dist_p(points, p):
     """Distance between each point in `points` and a given point `p`."""
@@ -32,9 +33,10 @@ def dist_p(points, p):
     return np.sqrt(np.sum((points - p)**2, axis=1))
 
 def dist_without_center(points, idxpp1, idxpp2):
-    """distance between 2 points to all other points, where the area between these two points is returned as 0"""
+    """distance between 2 points to all other points, the region between 
+    these two points is returned as 0."""
 
-    path_length = path_length_cum(points)
+    path_length = get_path_length_cum(points)
     first_seg = path_length[idxpp1] - path_length[:idxpp1]
     first_seg /= first_seg[0]
     second_seg = path_length[idxpp2+1:] - path_length[idxpp2]
@@ -44,7 +46,8 @@ def dist_without_center(points, idxpp1, idxpp2):
 
     return dist_vec
 
-def path_length(path):
+def get_path_length(path):
+    """Get the arc-length of a path."""
 
     dpath = np.diff(path, axis=0)
     dlengths = np.sqrt(np.sum(dpath**2, axis=1))
@@ -52,36 +55,38 @@ def path_length(path):
 
     return path_length
     
-def path_length_cum(paths):
+def get_path_length_cum(path):
+    """Get cumulative distance of each point in `path` to the firs point in the
+    list."""
 
-    dpath = np.diff(paths, axis = 0)
+    dpath = np.diff(path, axis = 0)
     dlengths = np.sqrt(np.sum(dpath**2, axis=1))
     path_length = np.cumsum(dlengths)
     path_length = np.array([0]+path_length.tolist())
-    
+
     return path_length
 
-def point_from_dist(points, index_pc, leng):
+def point_from_dist(points, index_pc, dist):
+    """Return the indices of the two points that are a distance `dist`
+    from point `index_pc` in the list of points `points`."""
 
-    returns = ([])
-    pc = points[index_pc]
-    res = path_length_cum(points)
+    res = get_path_length_cum(points)
     distpc = res[index_pc]
-    distp1 = distpc - leng
-    distp2 = distpc + leng
+    distp1 = distpc - dist
+    distp2 = distpc + dist
     indexp1 = np.argmin(np.abs(res-distp1))
     indexp2 = np.argmin(np.abs(res-distp2))
-    return indexp1,indexp2
+
+    return indexp1, indexp2
     
 def get_segments(graph, img_origin, img_label):
-    """Cria imagem na qual cada segmento de vaso possui um id diferente. Útil para isolar
-    apenas o vaso que está sendo processado."""
+    """Create image in which each vessel segment has an associated id. The ids
+    are the same edges indices as in `graph`."""
 
-    obj_listas = list(graph.edges(data=True))
+    graph_edges = list(graph.edges(data=True))
     img_graph = np.zeros_like(img_origin, dtype=int) - 1
-    for idx, item in enumerate(obj_listas):
+    for idx, item in enumerate(graph_edges):
         path = item[2]['path']
-        #idx_rand = np.random.randint(0, len(obj_listas))
         for p in path:
             img_graph[p] = idx
 
@@ -91,329 +96,50 @@ def get_segments(graph, img_origin, img_label):
 
     return img_exp
 
-def create_image(rqi_len_param_interv, min_len_interv, n_rqi_interv,graph,img_label,img_origin,median_threshold,rnd_seed=None,highlight_center=False):
-    
-    n_rqi = random.randint(n_rqi_interv[0],n_rqi_interv[1])
-    obj_listas = list(graph.edges(data=True))
-    img_segs = get_segments(graph, img_origin, img_label)
-    # print('img_segs')
-    # print(img_segs)
+def get_valid_pixels(graph_edges, cut):
+    """Get segment pixels that are long enough to augment."""
 
-    # plt.imshow(img_label, cmap='gray')
-    # # plt.subplot(1, 2, 2)
-    # # plt.imshow(seg.detach().numpy(), cmap='gray')
-    # plt.show()
+    valid_pixels = []
+    for edge_idx, graph_edge in enumerate(graph_edges):
+        valid_seg_pixels = []
 
-    if (rnd_seed):
-        random.seed(rnd_seed)
-    
-    img_new = img_origin.copy()
-    
-    debug_full = []
-    block_idx = []
-    for i_rqi in range(n_rqi):
-        
-        rqi_len_param = random.randint(rqi_len_param_interv[0],rqi_len_param_interv[1])
-        max_min_len = min([min_len_interv[1],rqi_len_param-5])
-        
-        min_len = random.randint(min_len_interv[0],max_min_len)
-        
-        list_valid_idx,idx_vector = only_valid_indexed(obj_listas,rqi_len_param//2)  
-        
-        index1 = random.randint(0,len(list_valid_idx)-1)
-        list_valid = list_valid_idx[index1][1]
-        index2 = random.randint(0,len(list_valid)-1)
-       
-        if (index1 in block_idx):
-            continue
-        
-        block_idx.append(index1)
-        #if (obj_listas[list_valid_idx[index1][0]])
-        
-        pc = list_valid[index2]
-        
-        #PONTOS QUE PERTENCEM MAS NÃO SAO VALIDOS PARA SER PC
-        idx_notvalid = list_valid_idx[index1][0]
-    
-        obj_cords = obj_listas[idx_notvalid][2]['path']
-        img_seg = img_segs==idx_notvalid
-
-        # plt.imshow(img_seg, cmap='gray')
-        # # plt.subplot(1, 2, 2)
-        # # plt.imshow(seg.detach().numpy(), cmap='gray')
-        # plt.show()
-
-        '''
-        Variáveis:
-        list_valid: lista de pontos válidos em todos os segmentos, segmentos sem pontos válidos
-            não incluídos
-        idx_vector: lista de pontos válidos em todos os segmentos, incluindo segmentos vazios
-        obj_cords: lista de todos os pontos do segmento selecionado
-        pc: ponto central na lista de pontos válidos do segmento selecionado (list_valid[index1])
-        idxpc: ponto central em obj_cords
-        img_seg: imagem contendo o segmento de vaso selecionado
-        '''
-    
-        idxpc = obj_cords.index(pc)
-        #INDICE P1 E P2
-        idxp1,idxp2 = point_from_dist(obj_cords,idxpc,rqi_len_param//2)
-        
-        #P1 = PONTO INICIAL DA RQI
-        #P2 = PONTO FINAL DA RQI
-        p1 = obj_cords[idxp1]   
-        p2 = obj_cords[idxp2]
-        
-        #IMAGEM DO ESQUELETO DA RQI
-        newCrop = np.zeros(img_label.shape,dtype=np.uint8)
-        
-        #IMAGEM QUE VAI SER RETORNADA COM AS ALTERAÇÕES
-        
-        #IMAGEM DO ESQUELETO COM QUEDA DE INTENSIDADE
-        newCropDyn = np.zeros(newCrop.shape, dtype=float)
-       
-        #CORTES DA IMAGEM DE ORIGEM E DE LABEL
-        oriCrop = crop(img_new,int(pc[0]),int(pc[1]),rqi_len_param)   
-        lblCrop = crop(img_label,int(pc[0]),int(pc[1]),rqi_len_param)
-        img_seg_crop = crop(img_seg,int(pc[0]),int(pc[1]),rqi_len_param)
-
-        # plt.imshow(img_seg_crop, cmap='gray')
-        # # plt.subplot(1, 2, 2)
-        # # plt.imshow(seg.detach().numpy(), cmap='gray')
-        # plt.show()
-        # plt.imshow(img_label, cmap='gray')
-        # # plt.subplot(1, 2, 2)
-        # # plt.imshow(seg.detach().numpy(), cmap='gray')
-        # plt.show()
-        
-        #* Usar idxp2+1 ao invés de idxp2 para pegar também o último ponto.
-        points = obj_cords[idxp1:idxp2+1]
-       
-        for point in points:        
-            newCrop[point] = 128
-            
-        #INDICE PP1, PP2. 
-        idxpp1,idxpp2 = point_from_dist(obj_cords,idxpc,min_len//2)
-        
-        #PP1 = INICIO DA ÁREA MINIMA DA RQI(BACKGROUND)
-        #PP2 = FIM DA ÁREA MINIMA DA RQI(BACKGROUND)    
-        pp1 = obj_cords[idxpp1]
-        pp2 = obj_cords[idxpp2]
-    
-        #Faz a queda de intensidade(distancia) entre p1(inicio da RQI) e pp1(inicio da area de saturação) , depois pp2(fim da area de saturacao) até p2(fim da RQI)
-        values = dist_without_center(points, idxpp1-idxp1,idxpp2-idxp1)
-    
-        #plot dos valores de intensidade
-        rqi_int_plot = values
-        
-        freq_vaso = ([])
-        for cord in obj_cords:        
-            freq_vaso.append(img_new[cord[0]][cord[1]])
-        vessel_int_plot = freq_vaso
-        
-        for idx, (r, c) in enumerate(points):
-            newCropDyn[r, c] = values[idx]
-            
-        #Corte das imagens de esqueleto para tratamento na função EXPAND_LINE
-        newCrop = crop(newCrop,int(pc[0]),int(pc[1]),rqi_len_param)
-        newCropDyn = crop(newCropDyn,int(pc[0]),int(pc[1]),rqi_len_param)
-        
-        newCrop_mod, debug_expand = expand_line(newCrop,newCropDyn,oriCrop,lblCrop,img_seg_crop,median_threshold,i_rqi)#dilatação
-        
-        img_new = img_new.copy()
-        img_new = crop_alter(img_new,newCrop_mod,int(pc[0]),int(pc[1]),rqi_len_param)
-    
-        #marca a area proxima ao centro da RQI para localizar na imagem final
-        if(highlight_center):     
-            coords = vizinhos(pc,img_new.shape)
-            for cord in coords:            
-                img_new[cord[0]][cord[1]] = 255        
-        
-        freq_vaso = ([])
-        for cord in obj_cords:        
-            freq_vaso.append(img_new[cord[0]][cord[1]])
-        vessel_int_new = freq_vaso
-    
-        debug = (oriCrop, lblCrop, newCrop, newCropDyn, img_seg_crop, rqi_int_plot, vessel_int_plot, 
-                 vessel_int_new, obj_cords, idxpc, idxp1, idxp2, idxpp1, idxpp2, debug_expand,newCrop_mod)
-        debug_full.append(debug)
-        im = pilimg.fromarray(img_new)
-    
-    return img_new, debug_full
-        
-def image_augmentation(graph,img_label,img_origin, rqi_len_param,min_len,median_threshold,rnd_seed=None,highlight_center=False):
-    
-    obj_listas = list(graph.edges(data=True))
-    img_segs = get_segments(graph, img_origin, img_label)
-
-    list_valid,idx_vector = only_valid(obj_listas,rqi_len_param//2)       
-    if (rnd_seed):
-        random.seed(rnd_seed)
-    
-    index1 = random.randint(0,len(list_valid)-1)
-    index2 = random.randint(0,len(list_valid[index1])-1)
-   
-    pc = list_valid[index1][index2]
-    
-    #PONTOS QUE PERTENCEM MAS NÃO SAO VALIDOS PARA SER PC
-    idx_notvalid = idx_vector.index(list_valid[index1])
-
-    obj_cords = obj_listas[idx_notvalid][2]['path']
-    img_seg = img_segs==idx_notvalid
-    
-    '''
-    Variáveis:
-    list_valid: lista de pontos válidos em todos os segmentos, segmentos sem pontos válidos
-        não incluídos
-    idx_vector: lista de pontos válidos em todos os segmentos, incluindo segmentos vazios
-    obj_cords: lista de todos os pontos do segmento selecionado
-    pc: ponto central na lista de pontos válidos do segmento selecionado (list_valid[index1])
-    idxpc: ponto central em obj_cords
-    img_seg: imagem contendo o segmento de vaso selecionado
-    '''
-
-    idxpc = obj_cords.index(pc)
-    #INDICE P1 E P2
-    idxp1,idxp2 = point_from_dist(obj_cords,idxpc,rqi_len_param//2)
-    
-    #P1 = PONTO INICIAL DA RQI
-    #P2 = PONTO FINAL DA RQI
-    p1 = obj_cords[idxp1]   
-    p2 = obj_cords[idxp2]
-    
-    #IMAGEM DO ESQUELETO DA RQI
-    newCrop = np.zeros(img_label.shape,dtype=np.uint8)
-    
-    #IMAGEM QUE VAI SER RETORNADA COM AS ALTERAÇÕES
-    img_new = np.zeros(img_label.shape,dtype=np.uint8)
-    
-    #IMAGEM DO ESQUELETO COM QUEDA DE INTENSIDADE
-    newCropDyn = np.zeros(newCrop.shape, dtype=float)
-   
-    #CORTES DA IMAGEM DE ORIGEM E DE LABEL
-    oriCrop = crop(img_origin,int(pc[0]),int(pc[1]),rqi_len_param)   
-    lblCrop = crop(img_label,int(pc[0]),int(pc[1]),rqi_len_param)
-    img_seg_crop = crop(img_seg,int(pc[0]),int(pc[1]),rqi_len_param)
-    
-    #* Usar idxp2+1 ao invés de idxp2 para pegar também o último ponto.
-    points = obj_cords[idxp1:idxp2+1]
-   
-    for point in points:        
-        newCrop[point] = 128
-        
-    #INDICE PP1, PP2. 
-    idxpp1,idxpp2 = point_from_dist(obj_cords,idxpc,min_len//2)
-    
-    #PP1 = INICIO DA ÁREA MINIMA DA RQI(BACKGROUND)
-    #PP2 = FIM DA ÁREA MINIMA DA RQI(BACKGROUND)    
-    pp1 = obj_cords[idxpp1]
-    pp2 = obj_cords[idxpp2]
-
-    #Faz a queda de intensidade(distancia) entre p1(inicio da RQI) e pp1(inicio da area de saturação) , depois pp2(fim da area de saturacao) até p2(fim da RQI)
-    values = dist_without_center(points, idxpp1-idxp1,idxpp2-idxp1)
-
-    #plot dos valores de intensidade
-    rqi_int_plot = values
-    
-    freq_vaso = ([])
-    for cord in obj_cords:        
-        freq_vaso.append(img_origin[cord[0]][cord[1]])
-    vessel_int_plot = freq_vaso
-    
-    for idx, (r, c) in enumerate(points):
-        newCropDyn[r, c] = values[idx]
-        
-    #Corte das imagens de esqueleto para tratamento na função EXPAND_LINE
-    newCrop = crop(newCrop,int(pc[0]),int(pc[1]),rqi_len_param)
-    newCropDyn = crop(newCropDyn,int(pc[0]),int(pc[1]),rqi_len_param)
-    
-    newCrop_mod, debug_expand = expand_line(newCrop,newCropDyn,oriCrop,lblCrop,img_seg_crop,median_threshold)#dilatação
-    
-    img_new = img_origin.copy()
-    img_new = crop_alter(img_new,newCrop_mod,int(pc[0]),int(pc[1]),rqi_len_param)
-
-    #marca a area proxima ao centro da RQI para localizar na imagem final
-    if(highlight_center):     
-        coords = vizinhos(pc,img_new.shape)
-        for cord in coords:            
-            img_new[cord[0]][cord[1]] = 255        
-    
-    freq_vaso = ([])
-    for cord in obj_cords:        
-        freq_vaso.append(img_new[cord[0]][cord[1]])
-    vessel_int_new = freq_vaso
-
-    debug = (oriCrop, lblCrop, newCrop, newCropDyn, img_seg_crop, rqi_int_plot, vessel_int_plot, 
-             vessel_int_new, obj_cords, idxpc, idxp1, idxp2, idxpp1, idxpp2, debug_expand)
-
-    return img_new, debug
-    
-def only_valid(obj_listas,cut):
-    """retorna apenas coordenadas válidas para o centro do RQI"""
-
-    validPixels = ([])
-    aux = ([])
-    idx_ = ([])
-    for lista in obj_listas:           
-        obj_cords = lista[2]['path']
-        #* Distância no segmentedo ao invés da distância entre pontos
-        path_length = path_length_cum(obj_cords)
-        for idx,dist in enumerate(path_length):
-            #if ((path_length([px,obj_cords[0]]) >= cut and path_length([px,obj_cords[-1]]) >= cut) ):
+        edge_coords = graph_edge[2]['path']
+        path_length = get_path_length_cum(edge_coords)
+        for idx, dist in enumerate(path_length):
             if dist > cut and (path_length[-1]-dist) > cut:
-                aux.append(obj_cords[idx])
-        if not(aux == []):
-            validPixels.append(aux)
-        idx_.append(aux)
-        aux = ([])
-    return validPixels,idx_
+                valid_seg_pixels.append(edge_coords[idx])
 
-def only_valid_indexed(obj_listas,cut):
+        if len(valid_seg_pixels)!=0:
+            valid_pixels.append([edge_idx, valid_seg_pixels])
 
-    validPixels = ([])
-    aux = ([])
-    idx_ = ([])
-    index_idx = 0
-    for lista in obj_listas: 
-        
-        obj_cords = lista[2]['path']
-        #* Distância no segmentedo ao invés da distância entre pontos
-        path_length = path_length_cum(obj_cords)
-        for idx,dist in enumerate(path_length):
-            #if ((path_length([px,obj_cords[0]]) >= cut and path_length([px,obj_cords[-1]]) >= cut) ):
-            if dist > cut and (path_length[-1]-dist) > cut:
-                aux.append(obj_cords[idx])
-        
-        idx_.append(aux)
-        if not(aux == []):
-            validPixels.append([index_idx,aux])
-        index_idx=index_idx+1         
-        aux = ([])
+    return valid_pixels
 
-    return validPixels,idx_
+def create_graph(label, adjust):
+    """Create graph from a binary image."""
 
-def create_graph(img, adjust):
-
-    img_bin = np.clip(img, 0, 1)    
-    img_skel = skimage.morphology.skeletonize(img_bin, method='lee')
+    label = np.clip(label, 0, 1)
+    img_skel = skimage.morphology.skeletonize(label, method='lee')
     # Convert back to PyVaNe
     data_skel = Image(img_skel)
-    proto_graph = create_graph_pv(data_skel)
-    if (adjust):
-        graph_vessel = net_adjust.adjust_graph(proto_graph, 0)
-        return graph_vessel
-    
-    return proto_graph
+    graph_vessel = create_graph_pv(data_skel)
+    if adjust:
+        graph_vessel = net_adjust.adjust_graph(graph_vessel, 0)
 
-def crop(img,p1,p2,rqi_len):
+    return graph_vessel
+
+def get_crop(img, point, rqi_len):
     """funcao de corte da imagem para facilitar processamento da RQI"""
 
-    param1 = max([0, p1 -rqi_len])
-    param2 = p1 +rqi_len
-    param3 = max([0, p2 -rqi_len])
-    param4 = p2 +rqi_len
-    imgRetorno = img[param1:param2,param3:param4]
+    nr, nc = img.shape
+    pr, pc = int(point[0]), int(point[1])
 
-    return imgRetorno
+    ri = max([0, pr - rqi_len])
+    re = min([nr, pr + rqi_len])
+    ci = max([0, pc - rqi_len])
+    ce = min([nc, pc + rqi_len])
+    img_crop = img[ri:re,ci:ce]
+
+    return img_crop
 
 def crop_alter(img,img2,p1,p2,rqi_len):  
     """funcao de substituição da imagem original pela imagem modificada, é trocado a area cortada da imagem pela nova imagem em tamanho menor"""
@@ -643,3 +369,114 @@ def expand_line(img_line,img_linedyn,img_origin,img_label,img_seg_crop,median_th
     debug = img_exp, img_ret_loc, outPutConv, img_only_back, coordsLoc, coordsLocNew, contorno
 
     return img_ret, debug
+
+def create_image(img_origin, img_label, rqi_len_interv, min_len_interv, 
+                 n_rqi_interv, median_threshold, rng_seed=None, 
+                 highlight_center=False):
+
+    graph = create_graph(img_label,True)
+
+    n_rqi = random.randint(n_rqi_interv[0],n_rqi_interv[1])
+    graph_edges = list(graph.edges(data=True))
+    img_segs = get_segments(graph, img_origin, img_label)
+
+    if rng_seed:
+        random.seed(rng_seed)
+
+    img_aug = img_origin.copy()
+
+    debug_full = []
+    edges_drawn = []
+    for i_rqi in range(n_rqi):
+
+        rqi_len = random.randint(rqi_len_interv[0], rqi_len_interv[1])
+        max_min_len = min([min_len_interv[1], rqi_len-5])
+        min_len = random.randint(min_len_interv[0], max_min_len)
+
+        # Get segment and central point to augment
+        valid_edges_pixels = get_valid_pixels(graph_edges, rqi_len//2)
+        valid_edge_index = random.randint(0, len(valid_edges_pixels)-1)
+        if valid_edge_index in edges_drawn:
+            continue
+        edges_drawn.append(valid_edge_index)
+        valid_edge_path = valid_edges_pixels[valid_edge_index][1]
+        pc_index_v = random.randint(0, len(valid_edge_path)-1)
+        
+        # Central point of an augmented segment
+        pc = valid_edge_path[pc_index_v]
+        edge_index = valid_edges_pixels[valid_edge_index][0]
+        edge_path = graph_edges[edge_index][2]['path']
+        # Image containing label of segment to be processed
+        img_seg = img_segs==edge_index
+
+        # Initial and final points of augmented region
+        pc_idx = edge_path.index(pc)
+        p1_idx , p2_idx = point_from_dist(edge_path, pc_idx, rqi_len//2)
+        p1 = edge_path[p1_idx]   
+        p2 = edge_path[p2_idx]
+        
+        #IMAGEM DO ESQUELETO DA RQI
+        newCrop = np.zeros(img_label.shape, dtype=np.uint8)
+        
+        #IMAGEM DO ESQUELETO COM QUEDA DE INTENSIDADE
+        newCropDyn = np.zeros(newCrop.shape, dtype=float)
+       
+        #CORTES DA IMAGEM DE ORIGEM E DE LABEL
+        oriCrop = get_crop(img_aug, pc, rqi_len)   
+        lblCrop = get_crop(img_label, pc, rqi_len)
+        img_seg_crop = get_crop(img_seg, pc, rqi_len)
+       
+        points = edge_path[p1_idx:p2_idx+1]
+       
+        for point in points:
+            newCrop[point] = 128
+
+        #INDICE PP1, PP2. 
+        idxpp1,idxpp2 = point_from_dist(edge_path,pc_idx,min_len//2)
+        
+        #PP1 = INICIO DA ÁREA MINIMA DA RQI(BACKGROUND)
+        #PP2 = FIM DA ÁREA MINIMA DA RQI(BACKGROUND)    
+        pp1 = edge_path[idxpp1]
+        pp2 = edge_path[idxpp2]
+    
+        #Faz a queda de intensidade(distancia) entre p1(inicio da RQI) e pp1(inicio da area de saturação) , depois pp2(fim da area de saturacao) até p2(fim da RQI)
+        values = dist_without_center(points, idxpp1-p1_idx,idxpp2-p1_idx)
+    
+        #plot dos valores de intensidade
+        rqi_int_plot = values
+        
+        freq_vaso = ([])
+        for cord in edge_path:        
+            freq_vaso.append(img_aug[cord[0]][cord[1]])
+        vessel_int_plot = freq_vaso
+        
+        for idx, (r, c) in enumerate(points):
+            newCropDyn[r, c] = values[idx]
+            
+        #Corte das imagens de esqueleto para tratamento na função EXPAND_LINE
+        newCrop = get_crop(newCrop, pc, rqi_len)
+        newCropDyn = get_crop(newCropDyn, pc, rqi_len)
+        
+        newCrop_mod, debug_expand = expand_line(newCrop,newCropDyn,oriCrop,lblCrop,img_seg_crop,median_threshold,i_rqi)#dilatação
+        
+        img_aug = img_aug.copy()
+        img_aug = crop_alter(img_aug,newCrop_mod,int(pc[0]),int(pc[1]),rqi_len)
+    
+        #marca a area proxima ao centro da RQI para localizar na imagem final
+        if(highlight_center):     
+            coords = vizinhos(pc,img_aug.shape)
+            for cord in coords:            
+                img_aug[cord[0]][cord[1]] = 255        
+        
+        freq_vaso = ([])
+        for cord in edge_path:        
+            freq_vaso.append(img_aug[cord[0]][cord[1]])
+        vessel_int_new = freq_vaso
+    
+        debug = (oriCrop, lblCrop, newCrop, newCropDyn, img_seg_crop, rqi_int_plot, vessel_int_plot, 
+                 vessel_int_new, edge_path, pc_idx, p1_idx, p2_idx, idxpp1, idxpp2, debug_expand,newCrop_mod)
+        debug_full.append(debug)
+        im = pilimg.fromarray(img_aug)
+    
+    return img_aug, debug_full, graph
+ 

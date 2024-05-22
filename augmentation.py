@@ -1,7 +1,5 @@
 import random
 import numpy as np
-import matplotlib.pyplot as plt
-from PIL import Image as pilimg
 import scipy.ndimage as ndi
 import skimage.morphology
 import skimage.draw
@@ -32,17 +30,25 @@ def dist_p(points, p):
 
     return np.sqrt(np.sum((points - p)**2, axis=1))
 
-def dist_without_center(points, idxpp1, idxpp2):
-    """distance between 2 points to all other points, the region between 
-    these two points is returned as 0."""
+def get_attenuation_coefficient(points, p_min_1_idx, p_min_2_idx):
+    """Calculates the distance between all points in points[:p_min_1_idx] to
+    points[p_min_1_idx] and all points in points[p_min_2_idx+1:] to 
+    points[p_min_2_idx]. The distance for points points[p_min_1_idx:p_min_2_idx+1]
+    is set to zero.
+
+    Returns an array with the values concatenated. This represents an attenuation 
+    coefficient between points points[0] and points[-1].
+    """
 
     path_length = get_path_length_cum(points)
-    first_seg = path_length[idxpp1] - path_length[:idxpp1]
+    first_seg = path_length[p_min_1_idx] - path_length[:p_min_1_idx]
     first_seg /= first_seg[0]
-    second_seg = path_length[idxpp2+1:] - path_length[idxpp2]
+    second_seg = path_length[p_min_2_idx+1:] - path_length[p_min_2_idx]
     second_seg /= second_seg[-1]
 
-    dist_vec = np.concatenate((first_seg, np.zeros(idxpp2-idxpp1+1), second_seg))
+    dist_vec = np.concatenate((first_seg, 
+                               np.zeros(p_min_2_idx-p_min_1_idx+1), 
+                               second_seg))
 
     return dist_vec
 
@@ -90,7 +96,8 @@ def get_segments(graph, img_origin, img_label):
         for p in path:
             img_graph[p] = idx
 
-    _, (img_inds_r, img_inds_c) = ndi.distance_transform_edt(img_graph==-1, return_indices=True)
+    _, (img_inds_r, img_inds_c) = ndi.distance_transform_edt(img_graph==-1, 
+                                                             return_indices=True)
     img_exp = img_graph[img_inds_r, img_inds_c]
     img_exp = img_exp*img_label//255
 
@@ -141,247 +148,179 @@ def get_crop(img, point, rqi_len):
 
     return img_crop
 
-def crop_alter(img,img2,p1,p2,rqi_len):  
-    """funcao de substituição da imagem original pela imagem modificada, é trocado a area cortada da imagem pela nova imagem em tamanho menor"""
+def crop_alter(img, img2, point, rqi_len):  
+    """funcao de substituição da imagem original pela imagem modificada, é 
+    trocado a area cortada da imagem pela nova imagem em tamanho menor"""
 
-    param1 = max([0, p1 -rqi_len])
-    param2 = p1 +rqi_len
-    param3 = max([0, p2 -rqi_len])
-    param4 = p2 +rqi_len
+    nr, nc = img.shape
+    pr, pc = int(point[0]), int(point[1])
 
-    img[param1:param2,param3:param4] = img2
+    ri = max([0, pr - rqi_len])
+    re = min([nr, pr + rqi_len])
+    ci = max([0, pc - rqi_len])
+    ce = min([nc, pc + rqi_len])
+
+    img[ri:re,ci:ce] = img2
 
     return img
 
-def calc_median(img,mask):
-    return np.mean(img[mask>0])
-
-def vizinhos(cord_center,shape):
+def neighbors(point, shape):
     """retorna vizinhos de um pixel"""
 
-    retorno = []
-    
-    #-1 -1  0 -1  +1 -1
-    #-1 0   0  0  +1 0 
-    #-1 +1  0 +1  +1 +1   
-    if ((cord_center[0]-1 < shape[0]) and (cord_center[1]-1 < shape[1])):
-        retorno.append([cord_center[0]-1,cord_center[1]-1])
+    shifts = ((-1, -1), (-1,  0), (-1, +1), (0,  -1), 
+              (0,  +1), (+1, -1), (+1, 0),  (+1, +1))
 
-    if ((cord_center[0] < shape[0]) and (cord_center[1]-1 < shape[1])):
-        retorno.append([cord_center[0],cord_center[1]-1])
+    neis = []
+    for s in shifts:
+        r = point[0]+s[0]
+        c = point[1]+s[1]
+        if 0<=r<shape[0] and 0<=c<shape[1]:
+            neis.append((r, c))
 
-    if ((cord_center[0]+1 < shape[0]) and (cord_center[1]-1 < shape[1])):
-        retorno.append([cord_center[0]+1,cord_center[1]-1])
+    return neis
 
-    if ((cord_center[0]-1 < shape[0]) and (cord_center[1] < shape[1])):
-        retorno.append([cord_center[0]-1,cord_center[1]])
+def expand_line(img_skel, img_skel_aug, img_origin, img_label, img_seg, 
+                back_threshold):
+    """Expand skeleton augmented image to the whole segment.
 
-    if ((cord_center[0]+1 < shape[0]) and (cord_center[1] < shape[1])):
-        retorno.append([cord_center[0]+1,cord_center[1]])
-
-    if ((cord_center[0]-1 < shape[0]) and (cord_center[1]+1 < shape[1])):
-        retorno.append([cord_center[0]-1,cord_center[1]+1])
-
-    if ((cord_center[0]-1 < shape[0]) and (cord_center[1]-1 < shape[1])):
-        retorno.append([cord_center[0]-1,cord_center[1]-1])
-
-    if ((cord_center[0]+1 < shape[0]) and (cord_center[1]+1 < shape[1])):
-        retorno.append([cord_center[0]+1,cord_center[1]+1])
-    
-    return retorno
-
-def expand_line(img_line,img_linedyn,img_origin,img_label,img_seg_crop,median_threshold,idx=0):    
-    """
-    Variáveis:
-    img_line: esqueleto da RQI
-    img_linedyn: esqueleto da RQI com queda de intensidade normalizada
-        Exemplo: [1,0.9,...,0.1,0,0,0,0,0.1,...,0.9,0.1]
-    img_origin: imagem dos vasos
-    img_label: imagem com rótulos
-    Todas as imagens possuem um crop    
+    Args:
+        img_skel: Skeleton image
+        img_skel_aug: Skeleton image with attenuation coefficient
+        img_origin: Original vessel image
+        img_label: Vessel label image
+        img_seg: Label image containing only the segment to be augmented
+        back_threshold: Threshold for accepting background region for
+        replacement.
     """
 
-    #* Mudei várias coisas nesta função
+    lbl_int = np.max(img_label)
 
-    #* conversão para float para melhorar a precisão
-    img_origin = img_origin.astype(float)  
-    #cria imagem binária da imagem do esqueleto da RQI
-    img_line = img_line == 128
-    #Diltação da imagem de esqueleto da RQI 
-    #img_bin = ndi.binary_dilation(img_line, iterations=width)
-    #img_exp = np.zeros_like(img_line, dtype=float)        
-    #img_bin = img_bin * img_label
+    img_origin = img_origin.astype(float)
+    img_skel = img_skel == 128
 
-    #vesValue = calc_median(img_origin,(img_label == 255))
-    
-    img_dist, (img_inds_r, img_inds_c) = ndi.distance_transform_edt(np.logical_not(img_line), return_indices=True)
-    
-    #img_dist = img_dist/np.max(img_dist)
+    ret = ndi.distance_transform_edt(np.logical_not(img_skel),
+                                     return_indices=True)
+    _, (img_inds_r, img_inds_c) = ret
 
-    bckValue = calc_median(img_origin,(img_label != 255))
+    back_int = np.mean(img_origin[img_label!=lbl_int])
+    img_origin_norm = img_origin - back_int
 
-    img_origin_bck = img_origin - bckValue
+    # Expand skeleton attenuation coefficients to whole image
+    img_exp = img_skel_aug[img_inds_r, img_inds_c]
+    # Set attenuation to 1 outside segment
+    img_exp[img_seg==0] = 1.
 
-    img_exp = img_linedyn[img_inds_r, img_inds_c]
-    #* Coloca valor 1 fora da RQI para deixar a imagem inalterada
-    img_exp[img_seg_crop==0] = 1.
-
-    #zera os valores de fundo na imagem com queda de intensidade
-    #img_ret é a imagem final, então a todo momento que for algo definitivo, vai ser usada ela
-    img_ret = img_origin_bck * img_exp
+    # Apply attenuation
+    img_aug = img_origin_norm * img_exp
     
     #retorna binário com fundo sendo true e vaso false
-    img_label_inv = img_label != np.max(img_label)
+    img_label_inv = img_label!=lbl_int
     
-    #pega as areas da RQI que serao afetadas(pode ser que pegue algo a mais
-    #img_ret_loc é uma variavel de controle para saber a real área que vai ser afetada no vaso
+    # Image with skeleton pixels that will have minimum value (saturated)
+    img_sat = (img_exp==0) & (img_seg>0)
 
-    
-    img_ret_loc = (img_linedyn[img_inds_r, img_inds_c]==0) & (img_seg_crop>0)
-
-    # plt.imshow(img_seg_crop, cmap='gray')
-    # # plt.subplot(1, 2, 2)
-    # # plt.imshow(seg.detach().numpy(), cmap='gray')
-    # plt.show()
-    
-    # plt.figure('img_ret_loc'+str(idx),figsize= [10,10])
-    # plt.imshow(img_ret_loc,'gray')
-    
-
-    img_ret = img_ret + bckValue
-    #* Arredonda para evitar saturação dos valores
-    img_ret = np.round(img_ret).astype(np.uint8)
-
-    
-    #aqui é isolado apenas as areas corretas do vaso que vao ser alteradas(tanto no img_ret, quanto img_ret_loc)
-    '''for row in range(img_bin.shape[0]):
-        for col in range(img_bin.shape[1]):  
-            if img_bin[row,col] == 255:
-                img_ret[row,col] = img_ret[row,col]
-            else:
-                img_ret[row,col] = img_origin[row,col]    
-    
-
-    for row in range(img_bin.shape[0]):
-        for col in range(img_bin.shape[1]):  
-            if img_bin[row,col] == 255:
-                img_ret_loc[row,col] = img_ret_loc[row,col]
-            else:
-                img_ret_loc[row,col] = 0'''
-                
-    #* Extrai apenas a região de saturação da imagem para que a convolução seja mais intuitiva
-   
-    inds = np.nonzero(img_ret_loc)
-    
-    # print(inds)
-    # print(np.min(img_ret_loc))
-    # print(np.max(img_ret_loc))
-
-    
+    img_aug = img_aug + back_int
+    img_aug = np.round(img_aug).astype(np.uint8)
+               
+    # Crop on saturation region
+    inds = np.nonzero(img_sat)    
     min_r, min_c = min(inds[0]), min(inds[1])
     max_r, max_c = max(inds[0]), max(inds[1])
-    img_ret_loc_iso = img_ret_loc[min_r:max_r+1, min_c:max_c+1]
+    img_sat_crop = img_sat[min_r:max_r+1, min_c:max_c+1]
 
-    
-
-    coordsLoc = np.where(img_ret_loc == 1)
+    # Coordinates of saturated region
+    sat_coords = np.where(img_sat == 1)
     # Coordenadas da região de saturação em relação ao centro
-    p_center =  [(img_ret_loc_iso.shape[0]-1)//2, (img_ret_loc_iso.shape[1]-1)//2]
-    coordsLocNorm = np.where(img_ret_loc_iso == 1)
-    coordsLocNorm = (coordsLocNorm[0] - p_center[0], coordsLocNorm[1] - p_center[1]) 
+    p_center =  [(img_sat_crop.shape[0]-1)//2, (img_sat_crop.shape[1]-1)//2]
+    sat_coords_norm = np.where(img_sat_crop == 1)
+    sat_coords_norm = (sat_coords_norm[0] - p_center[0], sat_coords_norm[1] - p_center[1]) 
 
     #faz convolução para poder pegar áreas válidas para uso na área de saturação
-    convoleOutput = ndi.convolve(img_label_inv.astype(int), img_ret_loc_iso[::-1,::-1].astype(int), mode = 'constant')
-    outPutConv = convoleOutput == img_ret_loc_iso.sum()
-    coordsConv = np.where(outPutConv == 1)
+    conv_output = ndi.convolve(img_label_inv.astype(int), img_sat_crop[::-1,::-1].astype(int), mode = 'constant')
+    conv_output_valid = conv_output == img_sat_crop.sum()
+    coords_valid_back = np.where(conv_output_valid == 1)
     # Pontos possíveis para pegar o fundo
-    coordsConv = list(zip(*coordsConv))
+    coords_valid_back = list(zip(*coords_valid_back))
 
     #dilata a area de saturação para poder pegar coordenadas das bordas do vaso
-    img_ret_loc_d = ndi.binary_dilation(img_ret_loc, iterations=1)
-    img_ret_loc_d = img_ret_loc_d.astype(np.uint8)
+    img_sat_dil = ndi.binary_dilation(img_sat, iterations=1)
+    img_sat_dil = img_sat_dil.astype(np.uint8)
 
     #encontra contornos para poder utilizar as coordendas das bordas do vaso
-    contours, hierarchy = cv2.findContours(img_ret_loc_d,
-                                            cv2.RETR_EXTERNAL,
-                                            cv2.CHAIN_APPROX_NONE)
-    contours = np.array([p[0] for p in contours[0]])
+    contour, _ = cv2.findContours(img_sat_dil,
+                                    cv2.RETR_EXTERNAL,
+                                    cv2.CHAIN_APPROX_NONE)
+    contour = np.array([p[0] for p in contour[0]])
 
-    contorno = []
-    for p in contours:   
+    # Pixels that are the external border of the saturation region
+    sat_ext_cont = []
+    for p in contour:   
         p_inv = (p[1], p[0])    
         if img_label[p_inv] == 0:
-            contorno.append(p_inv)
-    contorno = np.array(contorno)
+            sat_ext_cont.append(p_inv)
+    sat_ext_cont = np.array(sat_ext_cont)
 
+    mean_diffs = []
     while True:
         #começa a busca por um fundo válido para área de saturação
-        img_only_back = np.zeros_like(img_ret)
-        coordsLocNew = None
-        if (len(coordsConv) == 0):
+        img_only_back = np.zeros_like(img_aug)
+        sat_coords_on_back = None
+        if (len(coords_valid_back) == 0):
             #raise Exception('Unable to find a valid background for RQI')
             print('Unable to find a valid background for RQI')            
             break
         #faz um random nas coordenadas que ainda estão no vetor
-        indexConv = random.randint(0,len(coordsConv)-1)
+        idx_coord = random.randint(0, len(coords_valid_back)-1)
         #faz a localização do ponto sorteado anteriormente e remove as coordenadas do vetor
-        p_new = coordsConv[indexConv]            
-        coordsConv.remove(p_new)
+        pc_back = coords_valid_back[idx_coord]            
+        coords_valid_back.remove(pc_back)
 
         #localiza as coordenadas da area de saturação
         #depois movimenta as coordenadas para 0
         #depois movimenta as coordenadas para o ponto sorteado
         #isso faz com que seja possivel localizar o objeto de saturação na imagem 
-        coordsLocNew = (coordsLocNorm[0] + p_new[0], coordsLocNorm[1] + p_new[1])  
+        sat_coords_on_back = (sat_coords_norm[0] + pc_back[0], sat_coords_norm[1] + pc_back[1])  
         
-        
-
         #aqui pega apenas o fundo para poder fazer as validações
-        img_only_back[coordsLoc] = img_ret[coordsLocNew] 
+        img_only_back[sat_coords] = img_aug[sat_coords_on_back] 
 
         #faz diferença entre cada ponto da borda do vaso e seu respectivo vizinho dentro do vaso
-        dif = []
-
-        
-        for cord in contorno:
-            #print('cord')
-            #print(cord)
-            vizi = vizinhos(cord,img_ret_loc.shape)
-            #print('vizi')
-            #print(vizi)
-            #print(img_ret_loc.shape)
+        int_diff = []
+        for coord in sat_ext_cont:
+            vizi = neighbors(coord, img_sat.shape)
             for pt in vizi:
-                if ((img_ret_loc[pt[0]][pt[1]]) == 1):
-                    value = int(img_only_back[pt[0]][pt[1]]) - int(img_ret[cord[0]][cord[1]])
-                    dif.append(abs(value))
+                if img_sat[pt[0]][pt[1]] == 1:
+                    value = int(img_only_back[pt[0]][pt[1]]) - int(img_aug[coord[0]][coord[1]])
+                    int_diff.append(abs(value))
 
         #Faz a media entre todos os valores encontrados anteriormente
-        media_new_center = np.mean(dif)
-
+        mean_diff = np.mean(int_diff)
+        mean_diffs.append(mean_diff)
         #Valida se a média é válida
-        if (media_new_center > median_threshold):     
+        if mean_diff > back_threshold:     
             continue
         else:
         #--------linha responsável por trocar a área RQI pelo fundo                
-            img_ret[coordsLoc] = img_ret[coordsLocNew] 
+            img_aug[sat_coords] = img_aug[sat_coords_on_back] 
             break
     
-    debug = img_exp, img_ret_loc, outPutConv, img_only_back, coordsLoc, coordsLocNew, contorno
+    debug = (img_exp, img_sat, conv_output_valid, img_only_back, sat_coords, 
+            sat_coords_on_back, sat_ext_cont)
 
-    return img_ret, debug
+    return img_aug, debug
 
 def create_image(img_origin, img_label, rqi_len_interv, min_len_interv, 
-                 n_rqi_interv, median_threshold, rng_seed=None, 
+                 n_rqi_interv, back_threshold, rng_seed=None, 
                  highlight_center=False):
 
     graph = create_graph(img_label,True)
 
+    if rng_seed is not None:
+        random.seed(rng_seed)
+
     n_rqi = random.randint(n_rqi_interv[0],n_rqi_interv[1])
     graph_edges = list(graph.edges(data=True))
     img_segs = get_segments(graph, img_origin, img_label)
-
-    if rng_seed:
-        random.seed(rng_seed)
 
     img_aug = img_origin.copy()
 
@@ -395,12 +334,29 @@ def create_image(img_origin, img_label, rqi_len_interv, min_len_interv,
 
         # Get segment and central point to augment
         valid_edges_pixels = get_valid_pixels(graph_edges, rqi_len//2)
+
+        #*
+        img_augs = []
+        for idx in range(len(valid_edges_pixels)):
+            valid_edge_path = valid_edges_pixels[idx][1]
+            pc_index_v = len(valid_edge_path)//2
+            pc = valid_edge_path[pc_index_v]
+            img_aug_crop = get_crop(img_aug, pc, rqi_len).copy()
+            img_augs.append(img_aug_crop)
+        return img_augs
+
+        #print(len(valid_edges_pixels))
+        #break
+        #*
+
         valid_edge_index = random.randint(0, len(valid_edges_pixels)-1)
         if valid_edge_index in edges_drawn:
             continue
         edges_drawn.append(valid_edge_index)
         valid_edge_path = valid_edges_pixels[valid_edge_index][1]
         pc_index_v = random.randint(0, len(valid_edge_path)-1)
+
+        #print(n_rqi, rqi_len, min_len, valid_edge_index, pc_index_v)
         
         # Central point of an augmented segment
         pc = valid_edge_path[pc_index_v]
@@ -412,71 +368,69 @@ def create_image(img_origin, img_label, rqi_len_interv, min_len_interv,
         # Initial and final points of augmented region
         pc_idx = edge_path.index(pc)
         p1_idx , p2_idx = point_from_dist(edge_path, pc_idx, rqi_len//2)
-        p1 = edge_path[p1_idx]   
+        p1 = edge_path[p1_idx]
         p2 = edge_path[p2_idx]
-        
-        #IMAGEM DO ESQUELETO DA RQI
-        newCrop = np.zeros(img_label.shape, dtype=np.uint8)
-        
-        #IMAGEM DO ESQUELETO COM QUEDA DE INTENSIDADE
-        newCropDyn = np.zeros(newCrop.shape, dtype=float)
-       
-        #CORTES DA IMAGEM DE ORIGEM E DE LABEL
-        oriCrop = get_crop(img_aug, pc, rqi_len)   
-        lblCrop = get_crop(img_label, pc, rqi_len)
-        img_seg_crop = get_crop(img_seg, pc, rqi_len)
-       
-        points = edge_path[p1_idx:p2_idx+1]
-       
-        for point in points:
-            newCrop[point] = 128
 
-        #INDICE PP1, PP2. 
-        idxpp1,idxpp2 = point_from_dist(edge_path,pc_idx,min_len//2)
-        
-        #PP1 = INICIO DA ÁREA MINIMA DA RQI(BACKGROUND)
-        #PP2 = FIM DA ÁREA MINIMA DA RQI(BACKGROUND)    
-        pp1 = edge_path[idxpp1]
-        pp2 = edge_path[idxpp2]
-    
-        #Faz a queda de intensidade(distancia) entre p1(inicio da RQI) e pp1(inicio da area de saturação) , depois pp2(fim da area de saturacao) até p2(fim da RQI)
-        values = dist_without_center(points, idxpp1-p1_idx,idxpp2-p1_idx)
-    
-        #plot dos valores de intensidade
-        rqi_int_plot = values
-        
+        skel_aug_points = edge_path[p1_idx:p2_idx+1]
+
+        img_skel = np.zeros(img_label.shape, dtype=np.uint8)
+        for point in skel_aug_points:
+            img_skel[point] = 128
+
+        img_aug_crop = get_crop(img_aug, pc, rqi_len).copy()
+        img_label_crop = get_crop(img_label, pc, rqi_len)
+        img_seg_crop = get_crop(img_seg, pc, rqi_len)
+
+        # Initial and final points of minimum intensity region
+        p_min_1_idx, p_min_2_idx = point_from_dist(edge_path, pc_idx,
+                                                   min_len//2)
+        p_min_1 = edge_path[p_min_1_idx]
+        p_min_2 = edge_path[p_min_2_idx]
+
+        attenuation_coeff = get_attenuation_coefficient(skel_aug_points,
+                                            p_min_1_idx-p1_idx,
+                                            p_min_2_idx-p1_idx)
+
+        # For debug
         freq_vaso = ([])
         for cord in edge_path:        
             freq_vaso.append(img_aug[cord[0]][cord[1]])
         vessel_int_plot = freq_vaso
+        #----
         
-        for idx, (r, c) in enumerate(points):
-            newCropDyn[r, c] = values[idx]
+        img_skel_aug = np.zeros(img_skel.shape, dtype=float)
+        for idx, (r, c) in enumerate(skel_aug_points):
+            img_skel_aug[r, c] = attenuation_coeff[idx]
             
-        #Corte das imagens de esqueleto para tratamento na função EXPAND_LINE
-        newCrop = get_crop(newCrop, pc, rqi_len)
-        newCropDyn = get_crop(newCropDyn, pc, rqi_len)
+        img_skel_crop = get_crop(img_skel, pc, rqi_len)
+        img_skel_aug_crop = get_crop(img_skel_aug, pc, rqi_len)
         
-        newCrop_mod, debug_expand = expand_line(newCrop,newCropDyn,oriCrop,lblCrop,img_seg_crop,median_threshold,i_rqi)#dilatação
+        img_aug_crop_new, debug_expand = expand_line(img_skel_crop, img_skel_aug_crop, 
+                                                img_aug_crop, 
+                                                img_label_crop, img_seg_crop,
+                                                back_threshold)
         
-        img_aug = img_aug.copy()
-        img_aug = crop_alter(img_aug,newCrop_mod,int(pc[0]),int(pc[1]),rqi_len)
+        img_aug = crop_alter(img_aug, img_aug_crop_new, pc, rqi_len)
     
+        # For debug
         #marca a area proxima ao centro da RQI para localizar na imagem final
-        if(highlight_center):     
-            coords = vizinhos(pc,img_aug.shape)
+        if highlight_center:
+            coords = neighbors(pc, img_aug.shape)
             for cord in coords:            
-                img_aug[cord[0]][cord[1]] = 255        
+                img_aug[cord[0]][cord[1]] = 255
         
         freq_vaso = ([])
         for cord in edge_path:        
             freq_vaso.append(img_aug[cord[0]][cord[1]])
         vessel_int_new = freq_vaso
     
-        debug = (oriCrop, lblCrop, newCrop, newCropDyn, img_seg_crop, rqi_int_plot, vessel_int_plot, 
-                 vessel_int_new, edge_path, pc_idx, p1_idx, p2_idx, idxpp1, idxpp2, debug_expand,newCrop_mod)
+        debug = (img_aug_crop, img_label_crop, img_skel_crop, img_skel_aug_crop, 
+                 img_seg_crop, 
+                 rqi_len, attenuation_coeff, vessel_int_plot, vessel_int_new, 
+                 edge_path, pc_idx, p1_idx, p2_idx, p_min_1_idx, p_min_2_idx, 
+                 debug_expand,img_aug_crop_new)
         debug_full.append(debug)
-        im = pilimg.fromarray(img_aug)
-    
+        #------
+
     return img_aug, debug_full, graph
  

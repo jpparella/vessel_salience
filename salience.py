@@ -1,3 +1,6 @@
+"""Script for calculating the local vessel salience (LVS) and the low salience
+recal (LSRecall)."""
+
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image

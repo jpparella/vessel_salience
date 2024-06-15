@@ -1,3 +1,6 @@
+"""Script for augmenting the salience of blood vessels
+"""
+
 import random
 import numpy as np
 import scipy.ndimage as ndi
@@ -135,7 +138,7 @@ def create_graph(label, adjust):
     return graph_vessel
 
 def get_crop(img, point, rqi_len):
-    """funcao de corte da imagem para facilitar processamento da RQI"""
+    """Crop image around point."""
 
     nr, nc = img.shape
     pr, pc = int(point[0]), int(point[1])
@@ -149,8 +152,7 @@ def get_crop(img, point, rqi_len):
     return img_crop
 
 def crop_alter(img, img2, point, rqi_len):  
-    """funcao de substituição da imagem original pela imagem modificada, é 
-    trocado a area cortada da imagem pela nova imagem em tamanho menor"""
+    """Replace region of `img` around `point` by `img2`."""
 
     nr, nc = img.shape
     pr, pc = int(point[0]), int(point[1])
@@ -165,7 +167,7 @@ def crop_alter(img, img2, point, rqi_len):
     return img
 
 def neighbors(point, shape):
-    """retorna vizinhos de um pixel"""
+    """8-neighbors of a pixel."""
 
     shifts = ((-1, -1), (-1,  0), (-1, +1), (0,  -1), 
               (0,  +1), (+1, -1), (+1, 0),  (+1, +1))
@@ -312,6 +314,7 @@ def expand_line(img_skel, img_skel_aug, img_origin, img_label, img_seg,
 def create_image(img_origin, img_label, rqi_len_interv, min_len_interv, 
                  n_rqi_interv, back_threshold, rng_seed=None, 
                  highlight_center=False):
+    """Augment image."""
 
     graph = create_graph(img_label,True)
 
@@ -335,29 +338,14 @@ def create_image(img_origin, img_label, rqi_len_interv, min_len_interv,
         # Get segment and central point to augment
         valid_edges_pixels = get_valid_pixels(graph_edges, rqi_len//2)
 
-        #*
-        img_augs = []
-        for idx in range(len(valid_edges_pixels)):
-            valid_edge_path = valid_edges_pixels[idx][1]
-            pc_index_v = len(valid_edge_path)//2
-            pc = valid_edge_path[pc_index_v]
-            img_aug_crop = get_crop(img_aug, pc, rqi_len).copy()
-            img_augs.append(img_aug_crop)
-        return img_augs
-
-        #print(len(valid_edges_pixels))
-        #break
-        #*
-
         valid_edge_index = random.randint(0, len(valid_edges_pixels)-1)
         if valid_edge_index in edges_drawn:
             continue
+
         edges_drawn.append(valid_edge_index)
         valid_edge_path = valid_edges_pixels[valid_edge_index][1]
         pc_index_v = random.randint(0, len(valid_edge_path)-1)
 
-        #print(n_rqi, rqi_len, min_len, valid_edge_index, pc_index_v)
-        
         # Central point of an augmented segment
         pc = valid_edge_path[pc_index_v]
         edge_index = valid_edges_pixels[valid_edge_index][0]
@@ -412,8 +400,7 @@ def create_image(img_origin, img_label, rqi_len_interv, min_len_interv,
         
         img_aug = crop_alter(img_aug, img_aug_crop_new, pc, rqi_len)
     
-        # For debug
-        #marca a area proxima ao centro da RQI para localizar na imagem final
+        # For debugging
         if highlight_center:
             coords = neighbors(pc, img_aug.shape)
             for cord in coords:            

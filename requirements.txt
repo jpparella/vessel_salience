@@ -1,0 +1,13 @@
+python==3.12
+numpy==1.26.4
+scipy==1.13.0
+skimage==0.22.0
+cv2==4.8.1
+matplotlib==3.8.4
+PIL==10.3.0
+shapely==2.0.4
+networkx==3.3
+natsort==8.4.0
+oiffile==2013.08.02
+tifffile==2024.5.10
+czifile==2019.7.2

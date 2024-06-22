@@ -102,7 +102,7 @@ def get_segments(graph, img_origin, img_label):
     _, (img_inds_r, img_inds_c) = ndi.distance_transform_edt(img_graph==-1, 
                                                              return_indices=True)
     img_exp = img_graph[img_inds_r, img_inds_c]
-    img_exp = img_exp*img_label//255
+    img_exp = img_exp*img_label
 
     return img_exp
 
@@ -265,7 +265,7 @@ def expand_line(img_skel, img_skel_aug, img_origin, img_label, img_seg,
         # Search background regions to put on discontinuity
         img_only_back = np.zeros_like(img_aug)
         sat_coords_on_back = None
-        if (len(coords_valid_back) == 0):
+        if len(coords_valid_back) == 0:
             print('Unable to find a valid background for RQI')            
             break
 
@@ -325,7 +325,10 @@ def create_image(img_origin, img_label, rqi_len_interv, min_len_interv,
         graph: the graph created from the annotation image
     """
 
-    graph = create_graph(img_label,True)
+    if img_label.max()==255:
+        img_label = img_label//255
+
+    graph = create_graph(img_label, True)
 
     if rng_seed is not None:
         random.seed(rng_seed)

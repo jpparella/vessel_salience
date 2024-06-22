@@ -314,7 +314,23 @@ def expand_line(img_skel, img_skel_aug, img_origin, img_label, img_seg,
 def create_image(img_origin, img_label, rqi_len_interv, min_len_interv, 
                  n_rqi_interv, back_threshold, rng_seed=None, 
                  highlight_center=False):
-    """Augment image."""
+    """Augment image using the method proposed in the paper.
+
+    Args:
+        img_origin: original blood vessel image
+        img_label: binary image containing vessel annotations
+        rqi_len_interv: range of possible lengths for augmentation (parameter l in the paper)
+        min_len_interv: range of possible lengths for the discontinuity region (parameter l_d in the paper)
+        n_rqi_interv: number of segments to augment
+        back_threshold: similarity threshold for searching a valid background for the discontinuity
+        rng_seed: seed of the random number generator for reproducible results
+        highlight_center: if true, the central point of the augmentation is highlighted for easier visualization
+
+    Returns:
+        img_aug: the augmented image
+        debug_full: a list of relevant variables used for the main steps of the method
+        graph: the graph created from the annotation image
+    """
 
     graph = create_graph(img_label,True)
 
@@ -379,7 +395,7 @@ def create_image(img_origin, img_label, rqi_len_interv, min_len_interv,
                                             p_min_1_idx-p1_idx,
                                             p_min_2_idx-p1_idx)
 
-        # For debug
+        # For debugging
         freq_vaso = ([])
         for cord in edge_path:        
             freq_vaso.append(img_aug[cord[0]][cord[1]])

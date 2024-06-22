@@ -215,40 +215,38 @@ def expand_line(img_skel, img_skel_aug, img_origin, img_label, img_seg,
     # Apply attenuation
     img_aug = img_origin_norm * img_exp
     
-    #retorna binário com fundo sendo true e vaso false
+    # Binary image where background is True
     img_label_inv = img_label!=lbl_int
     
-    # Image with skeleton pixels that will have minimum value (saturated)
+    # Image with skeleton pixels that will have minimum value (discontinuity)
     img_sat = (img_exp==0) & (img_seg>0)
 
     img_aug = img_aug + back_int
     img_aug = np.round(img_aug).astype(np.uint8)
                
-    # Crop on saturation region
+    # Crop on discontinuity region
     inds = np.nonzero(img_sat)    
     min_r, min_c = min(inds[0]), min(inds[1])
     max_r, max_c = max(inds[0]), max(inds[1])
     img_sat_crop = img_sat[min_r:max_r+1, min_c:max_c+1]
 
-    # Coordinates of saturated region
+    # Coordinates of discontinuity region
     sat_coords = np.where(img_sat == 1)
-    # Coordenadas da região de saturação em relação ao centro
+    # Coordinates with respect to the central point
     p_center =  [(img_sat_crop.shape[0]-1)//2, (img_sat_crop.shape[1]-1)//2]
     sat_coords_norm = np.where(img_sat_crop == 1)
     sat_coords_norm = (sat_coords_norm[0] - p_center[0], sat_coords_norm[1] - p_center[1]) 
 
-    #faz convolução para poder pegar áreas válidas para uso na área de saturação
+    # Use convolution to find valid regions for candidate background for discontinuity
     conv_output = ndi.convolve(img_label_inv.astype(int), img_sat_crop[::-1,::-1].astype(int), mode = 'constant')
     conv_output_valid = conv_output == img_sat_crop.sum()
     coords_valid_back = np.where(conv_output_valid == 1)
-    # Pontos possíveis para pegar o fundo
     coords_valid_back = list(zip(*coords_valid_back))
 
-    #dilata a area de saturação para poder pegar coordenadas das bordas do vaso
+    # Dilation for obtaining discontinuity border
     img_sat_dil = ndi.binary_dilation(img_sat, iterations=1)
     img_sat_dil = img_sat_dil.astype(np.uint8)
 
-    #encontra contornos para poder utilizar as coordendas das bordas do vaso
     contour, _ = cv2.findContours(img_sat_dil,
                                     cv2.RETR_EXTERNAL,
                                     cv2.CHAIN_APPROX_NONE)
@@ -264,29 +262,25 @@ def expand_line(img_skel, img_skel_aug, img_origin, img_label, img_seg,
 
     mean_diffs = []
     while True:
-        #começa a busca por um fundo válido para área de saturação
+        # Search background regions to put on discontinuity
         img_only_back = np.zeros_like(img_aug)
         sat_coords_on_back = None
         if (len(coords_valid_back) == 0):
-            #raise Exception('Unable to find a valid background for RQI')
             print('Unable to find a valid background for RQI')            
             break
-        #faz um random nas coordenadas que ainda estão no vetor
+
+        # Center of candidate region
         idx_coord = random.randint(0, len(coords_valid_back)-1)
-        #faz a localização do ponto sorteado anteriormente e remove as coordenadas do vetor
         pc_back = coords_valid_back[idx_coord]            
         coords_valid_back.remove(pc_back)
 
-        #localiza as coordenadas da area de saturação
-        #depois movimenta as coordenadas para 0
-        #depois movimenta as coordenadas para o ponto sorteado
-        #isso faz com que seja possivel localizar o objeto de saturação na imagem 
         sat_coords_on_back = (sat_coords_norm[0] + pc_back[0], sat_coords_norm[1] + pc_back[1])  
         
-        #aqui pega apenas o fundo para poder fazer as validações
+        # Get candidate background region
         img_only_back[sat_coords] = img_aug[sat_coords_on_back] 
 
-        #faz diferença entre cada ponto da borda do vaso e seu respectivo vizinho dentro do vaso
+        # Difference between the outside border of the discontinuity region and the
+        # inside border of the candidate background region
         int_diff = []
         for coord in sat_ext_cont:
             vizi = neighbors(coord, img_sat.shape)
@@ -295,14 +289,13 @@ def expand_line(img_skel, img_skel_aug, img_origin, img_label, img_seg,
                     value = int(img_only_back[pt[0]][pt[1]]) - int(img_aug[coord[0]][coord[1]])
                     int_diff.append(abs(value))
 
-        #Faz a media entre todos os valores encontrados anteriormente
         mean_diff = np.mean(int_diff)
         mean_diffs.append(mean_diff)
-        #Valida se a média é válida
+        # Check if difference in intensities is smaller than the threshold
         if mean_diff > back_threshold:     
             continue
         else:
-        #--------linha responsável por trocar a área RQI pelo fundo                
+            # Put background region into the discontinuity region         
             img_aug[sat_coords] = img_aug[sat_coords_on_back] 
             break
     

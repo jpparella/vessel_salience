@@ -277,11 +277,14 @@ def lvs(img_gray, img_bin, radius, k=50):
     Returns:
         An image containing the LVS value for each pixel
     """
+
+    if img_bin.max()==255:
+        img_bin = img_bin//255
     
     graph = get_graph(img_bin)
     contour = get_contour(img_bin)
     closest_points = get_closest_points(graph, contour, k)
-    section_data = get_intensities(img_gray,img_bin, graph, contour, closest_points, radius)
+    section_data = get_intensities(img_gray, img_bin, graph, contour, closest_points, radius)
 
     section_stats = get_statistics(section_data)
     section_stats_s = smooth_values(section_stats, n=15)

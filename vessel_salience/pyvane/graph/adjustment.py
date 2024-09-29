@@ -4,7 +4,7 @@ are used for simplifying the graph and removing small edges."""
 from skimage import draw
 import networkx as nx
 import numpy as np
-import pyvane.util as util
+from .. import util
 
 def simplify(graph, use_old_method=False, verbose=False):
     """Simplify node positions in a graph, also adjusting the edges. It is assumed that nodes in the

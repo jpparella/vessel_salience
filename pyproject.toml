@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vessel_salience"
+version = "1.0"
+description = "Vessel salience calculation."
+readme = "readme.md"
+
+[tool.setuptools]
+packages = ["vessel_salience"]

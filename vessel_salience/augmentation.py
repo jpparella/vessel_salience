@@ -7,10 +7,9 @@ import scipy.ndimage as ndi
 import skimage.morphology
 import skimage.draw
 import cv2
-from pyvane.graph.creation import create_graph as create_graph_pv
-from pyvane.graph import adjustment as net_adjust
-from pyvane.image import Image
-from pyvane import util
+from .pyvane.graph.creation import create_graph as create_graph_pv
+from .pyvane.graph import adjustment as net_adjust
+from .pyvane.image import Image
 
 
 def extract_full_length(graph):

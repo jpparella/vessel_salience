@@ -3,16 +3,15 @@ recal (LSRecall)."""
 
 import numpy as np
 import matplotlib.pyplot as plt
-from PIL import Image
 from skimage.morphology import skeletonize
 from skimage import draw
 from scipy.spatial import KDTree
 import scipy.ndimage as ndi
 import cv2
-from pyvane.graph.creation import create_graph
-from pyvane.graph import adjustment as net_adjust
-from pyvane.image import Image as Image_pv
-from pyvane.util import graph_to_img
+from .pyvane.graph.creation import create_graph
+from .pyvane.graph import adjustment as net_adjust
+from .pyvane.image import Image as Image_pv
+from .pyvane.util import graph_to_img
 
 def get_graph(img_bin):
     """Create graph representing blood vessel topology."""
@@ -90,7 +89,8 @@ def get_closest_points(graph, contour, k=50, show_warnings=False):
 
     return point_map
 
-def get_intensities(img, img_bin, graph, contour, closest_points, radius=5):
+def get_intensities(img, img_bin, graph, contour, closest_points, radius=5, 
+                    roi=None):
     """Get image intensities around each medial axis point. The function returns 
     a list of lists. Each element of the list corresponds to a medial axis (a 
     graph edge), and each sublist contains a set of dictionaries for each
@@ -137,11 +137,19 @@ def get_intensities(img, img_bin, graph, contour, closest_points, radius=5):
                 rrb_2, ccb_2 = draw.disk((n2[0], n2[1]), radius, shape=img.shape)
                 rrb = np.concatenate((rrb_1, rrb_2))
                 ccb = np.concatenate((ccb_1, ccb_2))
-    
-            int_vessel = img[rrv, ccv]   
-            # Keep only positions on the background     
+
+            # Keep only positions on the background
             mask = img_bin[rrb, ccb]==0
             rrb, ccb = rrb[mask], ccb[mask]
+
+            # Keep only pixels inside ROI
+            if roi is not None:
+                mask = roi[rrv, ccv]>0
+                rrv, ccv = rrv[mask], ccv[mask]
+                mask = roi[rrb, ccb]>0
+                rrb, ccb = rrb[mask], ccb[mask]
+
+            int_vessel = img[rrv, ccv]
             int_background = img[rrb, ccb]
     
             section_data_path.append({
@@ -249,7 +257,7 @@ def expand_values(graph, section_stats_s, img_gray, img_bin):
 
     obj_listas = list(graph.edges(data=True))
     img_lvs_skel = np.zeros_like(img_gray, dtype=float) 
-    img_skel = np.zeros_like(img_gray, dtype=float) 
+    img_skel = np.zeros_like(img_gray, dtype=np.uint8) 
     for item, stats_path in zip(obj_listas, section_stats_s):
 
         path = item[2]['path']
@@ -261,9 +269,9 @@ def expand_values(graph, section_stats_s, img_gray, img_bin):
     img_lvs = img_lvs_skel[img_inds_r, img_inds_c]
     img_lvs = img_lvs*(img_bin>0)
 
-    return img_lvs
+    return img_lvs, img_skel, img_lvs_skel
     
-def lvs(img_gray, img_bin, radius, k=50):
+def lvs(img_gray, img_bin, radius, k=50, roi=None, return_skel=False):
     """Calculate the Local vessel salience (LVS) of an image.
 
     Args:
@@ -273,6 +281,8 @@ def lvs(img_gray, img_bin, radius, k=50):
         (parameter r_b of the paper)
         k: number of contour points to search around each central point. Larger
         values guarantee that contour points will be found, but might be slower.
+        roi: only pixels inside `roi` will be considered for calculating the
+        LVS. Optional.
 
     Returns:
         An image containing the LVS value for each pixel
@@ -284,14 +294,19 @@ def lvs(img_gray, img_bin, radius, k=50):
     graph = get_graph(img_bin)
     contour = get_contour(img_bin)
     closest_points = get_closest_points(graph, contour, k)
-    section_data = get_intensities(img_gray, img_bin, graph, contour, closest_points, radius)
+    section_data = get_intensities(img_gray, img_bin, graph, contour, 
+                                   closest_points, radius, roi)
 
     section_stats = get_statistics(section_data)
     section_stats_s = smooth_values(section_stats, n=15)
 
-    img_lvs = expand_values(graph, section_stats_s, img_gray, img_bin)
-
-    return img_lvs  
+    img_lvs, img_skel, img_lvs_skel = expand_values(graph, section_stats_s, 
+                                                    img_gray, img_bin)
+    
+    if return_skel:
+        return img_lvs, img_skel, img_lvs_skel
+    else:
+        return img_lvs  
 
 def ls_recall(img_lvs, img_bin, pred, threshold):
     """Calculates the low-salience recall (LSRecall).

@@ -105,6 +105,7 @@ def get_intensities(img, img_bin, graph, contour, closest_points, radius=5,
     """
 
     paths = [path[2] for path in graph.edges(data='path')]
+    img_shape = img.shape[:2]
 
     section_data = []
     for path, closest_points_path in zip(paths, closest_points):
@@ -117,7 +118,7 @@ def get_intensities(img, img_bin, graph, contour, closest_points, radius=5,
             n1 = contour[nei1_idx]
             # Vessel and background positions for the nearest point on the contour
             rrv_1, ccv_1 = draw.line(n1[0], n1[1], p[0], p[1])
-            rrb_1, ccb_1 = draw.disk((n1[0], n1[1]), radius, shape=img.shape)
+            rrb_1, ccb_1 = draw.disk((n1[0], n1[1]), radius, shape=img_shape)
     
             if nei2_idx is None:
                 # Only the nearest point is used
@@ -134,7 +135,7 @@ def get_intensities(img, img_bin, graph, contour, closest_points, radius=5,
                 rrv = np.concatenate((rrv_1, rrv_2))
                 ccv = np.concatenate((ccv_1, ccv_2))
     
-                rrb_2, ccb_2 = draw.disk((n2[0], n2[1]), radius, shape=img.shape)
+                rrb_2, ccb_2 = draw.disk((n2[0], n2[1]), radius, shape=img_shape)
                 rrb = np.concatenate((rrb_1, rrb_2))
                 ccb = np.concatenate((ccb_1, ccb_2))
 
@@ -177,14 +178,20 @@ def get_statistics(section_data):
     'diff_norm_p':  # Normalized intensity difference (LVS index before smoothing)
     """
 
-    section_stats = []   
+    section_stats = []
     for idx, segment in enumerate(section_data):
         int_vessel_m_prv = 0
         int_back_m_prv = 0
-        section_stats_path =[]     
+        section_stats_path = []
         for pix in segment:
             backg = pix.get('int_back')
             intves = pix.get('int_vessel')
+
+            # If grayscale image, expand arrays from n to nx1. To be compatible with
+            # color images havingarrays of size nx3
+            if backg.ndim==1:
+                backg = np.expand_dims(backg, axis=1)
+                intves = np.expand_dims(intves, axis=1)
             
             # Average intensity values. If for some reason there is no vessel
             # or background pixels, the value calculated for the previous point
@@ -192,16 +199,18 @@ def get_statistics(section_data):
             int_vessel_m = int_vessel_m_prv
             int_back_m = int_back_m_prv
             if len(intves) != 0:
-                int_vessel_m = np.mean(intves)
+                int_vessel_m = np.mean(intves, axis=0).squeeze()
                 
             if len(backg) != 0:
-                int_back_m =  np.mean(backg)
+                int_back_m =  np.mean(backg, axis=0).squeeze()
 
             # Intensity difference between vessel and background
-            diff_p = int_vessel_m-int_back_m
+            diff_p = np.sqrt(np.sum((int_vessel_m-int_back_m)**2))
             
             # Normalized difference
-            diff_norm_p = (int_vessel_m-int_back_m)/max([int_vessel_m,int_back_m])
+            norm_v = np.sqrt(np.sum(int_vessel_m**2))
+            norm_b = np.sqrt(np.sum(int_back_m**2))
+            diff_norm_p = diff_p/max([norm_v, norm_b])
 
             section_stats_path.append({
                 'int_vessel_m': int_vessel_m,   # Avg vessel intensity
@@ -251,13 +260,13 @@ def normalize(section_stats, total_mean, total_std):
 
     return section_stats 
 
-def expand_values(graph, section_stats_s, img_gray, img_bin):
+def expand_values(graph, section_stats_s, img, img_bin):
     """Expands LVS values calculated for medial axis pixels to all pixels in the
     vessel."""
 
     obj_listas = list(graph.edges(data=True))
-    img_lvs_skel = np.zeros_like(img_gray, dtype=float) 
-    img_skel = np.zeros_like(img_gray, dtype=np.uint8) 
+    img_lvs_skel = np.zeros_like(img, dtype=float) 
+    img_skel = np.zeros_like(img, dtype=np.uint8) 
     for item, stats_path in zip(obj_listas, section_stats_s):
 
         path = item[2]['path']
@@ -271,11 +280,11 @@ def expand_values(graph, section_stats_s, img_gray, img_bin):
 
     return img_lvs, img_skel, img_lvs_skel
     
-def lvs(img_gray, img_bin, radius, k=50, roi=None, return_skel=False):
+def lvs(img, img_bin, radius, k=50, roi=None, return_skel=False):
     """Calculate the Local vessel salience (LVS) of an image.
 
     Args:
-        img_gray: original image
+        img: original image
         img_bin: binary image containing vessel annotations
         radius: radius of the background region to consider around contour pixels
         (parameter r_b of the paper)
@@ -294,14 +303,14 @@ def lvs(img_gray, img_bin, radius, k=50, roi=None, return_skel=False):
     graph = get_graph(img_bin)
     contour = get_contour(img_bin)
     closest_points = get_closest_points(graph, contour, k)
-    section_data = get_intensities(img_gray, img_bin, graph, contour, 
+    section_data = get_intensities(img, img_bin, graph, contour, 
                                    closest_points, radius, roi)
 
     section_stats = get_statistics(section_data)
     section_stats_s = smooth_values(section_stats, n=15)
 
     img_lvs, img_skel, img_lvs_skel = expand_values(graph, section_stats_s, 
-                                                    img_gray, img_bin)
+                                                    img, img_bin)
     
     if return_skel:
         return img_lvs, img_skel, img_lvs_skel
@@ -326,14 +335,14 @@ def ls_recall(img_lvs, img_bin, pred, threshold):
     if img_hard.sum() == 0:
         # No vessel pixels
         return 0
-        
+
     # Recovered low-salience pixels
     pred_hard = pred[img_hard>0]
-        
+
     # Recall
     recall = pred_hard.sum()/pred_hard.size
 
-    return recall
+    return recall.item()
 
 #### Auxiliary functions for visualization ####
 

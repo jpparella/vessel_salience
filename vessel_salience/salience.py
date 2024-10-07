@@ -210,7 +210,10 @@ def get_statistics(section_data):
             # Normalized difference
             norm_v = np.sqrt(np.sum(int_vessel_m**2))
             norm_b = np.sqrt(np.sum(int_back_m**2))
-            diff_norm_p = diff_p/max([norm_v, norm_b])
+            if diff_p==0:
+                diff_norm_p = 0.
+            else:
+                diff_norm_p = diff_p/max([norm_v, norm_b])
 
             section_stats_path.append({
                 'int_vessel_m': int_vessel_m,   # Avg vessel intensity

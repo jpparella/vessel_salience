@@ -327,39 +327,51 @@ def create_image(img_origin, img_label, rqi_len_interv, min_len_interv,
     if img_label.max()==255:
         img_label = img_label//255
 
-    graph = create_graph(img_label, True)
-
     if rng_seed is not None:
         random.seed(rng_seed)
 
-    n_rqi = random.randint(n_rqi_interv[0],n_rqi_interv[1])
+    graph = create_graph(img_label, True)
     graph_edges = list(graph.edges(data=True))
+
+    # Get how many segments can be augmented
+    valid_edges_pixels = get_valid_pixels(graph_edges, rqi_len_interv[0]//2)
+    # Augment at most len(valid_edges_pixels) segments
+    n_rqi_possible = len(valid_edges_pixels)
+    n_rqi_interv = (
+        min([n_rqi_interv[0], n_rqi_possible]),
+        min([n_rqi_interv[1], n_rqi_possible])
+    )
+
+    n_rqi = random.randint(n_rqi_interv[0], n_rqi_interv[1])
     img_segs = get_segments(graph, img_origin, img_label)
 
     img_aug = img_origin.copy()
+    img_augmented_segs = np.zeros_like(img_origin)
 
     debug_full = []
     edges_drawn = []
     for i_rqi in range(n_rqi):
 
-        rqi_len = random.randint(rqi_len_interv[0], rqi_len_interv[1])
+        valid = False
+        while not valid:
+            rqi_len = random.randint(rqi_len_interv[0], rqi_len_interv[1])
+            valid_edges_pixels = get_valid_pixels(graph_edges, rqi_len//2)
+            # If there are valid edges
+            if len(valid_edges_pixels)>0:
+                valid_edge_index = random.randint(0, len(valid_edges_pixels)-1)
+                edge_index = valid_edges_pixels[valid_edge_index][0]
+                if edge_index not in edges_drawn:
+                    valid = True
+                    edges_drawn.append(edge_index)
+
         max_min_len = min([min_len_interv[1], rqi_len-5])
         min_len = random.randint(min_len_interv[0], max_min_len)
 
-        # Get segment and central point to augment
-        valid_edges_pixels = get_valid_pixels(graph_edges, rqi_len//2)
-
-        valid_edge_index = random.randint(0, len(valid_edges_pixels)-1)
-        if valid_edge_index in edges_drawn:
-            continue
-
-        edges_drawn.append(valid_edge_index)
         valid_edge_path = valid_edges_pixels[valid_edge_index][1]
         pc_index_v = random.randint(0, len(valid_edge_path)-1)
 
         # Central point of an augmented segment
         pc = valid_edge_path[pc_index_v]
-        edge_index = valid_edges_pixels[valid_edge_index][0]
         edge_path = graph_edges[edge_index][2]['path']
         # Image containing label of segment to be processed
         img_seg = img_segs==edge_index
@@ -375,6 +387,7 @@ def create_image(img_origin, img_label, rqi_len_interv, min_len_interv,
         img_skel = np.zeros(img_label.shape, dtype=np.uint8)
         for point in skel_aug_points:
             img_skel[point] = 128
+            img_augmented_segs[point] = 255
 
         img_aug_crop = get_crop(img_aug, pc, rqi_len).copy()
         img_label_crop = get_crop(img_label, pc, rqi_len)
@@ -430,5 +443,5 @@ def create_image(img_origin, img_label, rqi_len_interv, min_len_interv,
         debug_full.append(debug)
         #------
 
-    return img_aug, debug_full, graph
+    return img_aug, debug_full, graph, img_augmented_segs
  

@@ -8,21 +8,14 @@ from skimage import draw
 from scipy.spatial import KDTree
 import scipy.ndimage as ndi
 import cv2
-from .pyvane.graph.creation import create_graph
-from .pyvane.graph import adjustment as net_adjust
-from .pyvane.image import Image as Image_pv
-from .pyvane.util import graph_to_img
+from pyvane.graph.creation import create_graph_with_mapping
+from pyvane.graph.util import construct_attribute_volume
+from pyvane.util.misc import graph_to_img
 
 def get_graph(img_bin):
-    """Create graph representing blood vessel topology."""
 
     img_skel = skeletonize(img_bin)
-    img_skel_pv = Image_pv(img_skel)
-    graph = create_graph(img_skel_pv)
-    graph_simple = net_adjust.simplify(graph)
-    graph_final = net_adjust.adjust_graph(graph_simple, length_threshold=5)
-
-    return graph_final
+    return create_graph_with_mapping(img_skel, img_bin, length_threshold=0.)
 
 def get_contour(img_bin):
     """Get the contours of the blood vessels."""
@@ -50,14 +43,11 @@ def get_closest_points(graph, contour, k=50, show_warnings=False):
 
     # kdtree of the contour
     kdtree = KDTree(contour)
-    # Flatten list of skeleton pixels
-    paths = [path[2] for path in graph.edges(data='path')]
-    pixels = [p for path in paths for p in path]
 
-    point_map = []
-    for v1,v2,path in graph.edges(data='path'):
+    point_map = {}
+    for v1, v2, key, path in graph.edges(data='path', keys=True):
         point_map_path = []
-        for point_idx, point in enumerate(path):
+        for _, point in enumerate(path):
             
             # We could use kdtree.query(point, k=[k]) to get only the k-th nearest neighbor, but the order
             # of the points is random when the distance is identical, which causes some missing points
@@ -85,7 +75,7 @@ def get_closest_points(graph, contour, k=50, show_warnings=False):
             else:
                 point_map_path.append(( nei1_idx, nei2_idx))
         
-        point_map.append(point_map_path)
+        point_map[(v1, v2, key)] = point_map_path
 
     return point_map
 
@@ -104,13 +94,12 @@ def get_intensities(img, img_bin, graph, contour, closest_points, radius=5,
     'pix_back'      # Background pixels
     """
 
-    paths = [path[2] for path in graph.edges(data='path')]
     img_shape = img.shape[:2]
 
-    section_data = []
-    for path, closest_points_path in zip(paths, closest_points):
+    section_data = {}
+    for v1, v2, key, path in graph.edges(data='path', keys=True):
         # For each segment
-
+        closest_points_path = closest_points[(v1, v2, key)]
         section_data_path = []     
         for p, (nei1_idx, nei2_idx) in zip(path, closest_points_path):
             # For each pixel on the medial axis of a segment
@@ -160,7 +149,7 @@ def get_intensities(img, img_bin, graph, contour, closest_points, radius=5,
                 'pix_back':list(zip(rrb, ccb))      # Background pixels
                 })
 
-        section_data.append(section_data_path)
+        section_data[(v1, v2, key)] = section_data_path
 
     return section_data
 
@@ -178,8 +167,8 @@ def get_statistics(section_data):
     'diff_norm_p':  # Normalized intensity difference (LVS index before smoothing)
     """
 
-    section_stats = []
-    for idx, segment in enumerate(section_data):
+    section_stats = {}
+    for (v1, v2, key), segment in section_data.items():
         int_vessel_m_prv = 0
         int_back_m_prv = 0
         section_stats_path = []
@@ -225,7 +214,7 @@ def get_statistics(section_data):
             int_vessel_m_prv = int_vessel_m
             int_back_m_prv = int_back_m
             
-        section_stats.append(section_stats_path)
+        section_stats[(v1, v2, key)] = section_stats_path
 
     return section_stats
   
@@ -236,17 +225,18 @@ def smooth_values(section_stats, n=3):
     """
 
     total_r = []
-    for idx_path, section_stats_path in enumerate(section_stats):
+    for (v1, v2, key), section_stats_path in section_stats.items():
         for idx_pix, _ in enumerate(section_stats_path):
             idx_ini = max([0, idx_pix-n])
             
             section_stats_nei = section_stats_path[idx_ini:idx_pix+n+1]
             diff_nei = [item['diff_norm_p'] for item in section_stats_nei]
             diff_m = np.mean(diff_nei)
-            total_r.append(section_stats[idx_path][idx_pix]['diff_norm_p'])
-            section_stats[idx_path][idx_pix]['diff_norm_p_mean']=diff_m
+            total_r.append(section_stats[(v1, v2, key)][idx_pix]['diff_norm_p'])
+            section_stats[(v1, v2, key)][idx_pix]['diff_norm_p_mean'] = diff_m
 
-    section_stats = normalize(section_stats, np.nanmean(total_r), np.nanmean(total_r))
+    section_stats = normalize(
+        section_stats, np.nanmean(total_r), np.nanstd(total_r))
 
     return section_stats  
 
@@ -254,9 +244,9 @@ def normalize(section_stats, total_mean, total_std):
     """Normalizes LVS values by the mean and deviation of the values for all pixels
     in an image. Not used in the experiments."""
 
-    for idx_path, section_stats_path in enumerate(section_stats):
+    for (v1, v2, key), section_stats_path in section_stats.items():
         for idx_pix, _ in enumerate(section_stats_path):  
-            dict_data = section_stats[idx_path][idx_pix]      
+            dict_data = section_stats[(v1, v2, key)][idx_pix]      
             value = dict_data['diff_norm_p']
             dict_data['diff_norm_p_div_mean'] = value/total_mean
             dict_data['diff_norm_p_div_std'] = (value-total_mean)/total_std
@@ -283,7 +273,7 @@ def expand_values(graph, section_stats_s, img, img_bin):
 
     return img_lvs, img_skel, img_lvs_skel
     
-def lvs(img, img_bin, radius, k=50, roi=None, return_skel=False):
+def lvs(img, img_bin, radius, k=50, n=5, roi=None, return_skel=False):
     """Calculate the Local vessel salience (LVS) of an image.
 
     Args:
@@ -293,6 +283,7 @@ def lvs(img, img_bin, radius, k=50, roi=None, return_skel=False):
         (parameter r_b of the paper)
         k: number of contour points to search around each central point. Larger
         values guarantee that contour points will be found, but might be slower.
+        n: number of pixels to consider for smoothing the LVS values along the vessel.
         roi: only pixels inside `roi` will be considered for calculating the
         LVS. Optional.
 
@@ -303,22 +294,22 @@ def lvs(img, img_bin, radius, k=50, roi=None, return_skel=False):
     if img_bin.max()==255:
         img_bin = img_bin//255
     
-    graph = get_graph(img_bin)
+
+    graph, labeled_image, id_cl_map = get_graph(img_bin)
     contour = get_contour(img_bin)
     closest_points = get_closest_points(graph, contour, k)
     section_data = get_intensities(img, img_bin, graph, contour, 
                                    closest_points, radius, roi)
 
     section_stats = get_statistics(section_data)
-    section_stats_s = smooth_values(section_stats, n=15)
+    section_stats_s = smooth_values(section_stats, n=n)
 
-    img_lvs, img_skel, img_lvs_skel = expand_values(graph, section_stats_s, 
-                                                    img, img_bin)
+    for (v1, v2, key), path_vals in section_stats_s.items():
+        graph.edges[v1, v2, key]['diff_norm_p_mean'] = [item['diff_norm_p_mean'] for item in path_vals]
+
+    img_lvs = construct_attribute_volume(graph, labeled_image, id_cl_map, edge_attr="diff_norm_p_mean")
     
-    if return_skel:
-        return img_lvs, img_skel, img_lvs_skel
-    else:
-        return img_lvs  
+    return img_lvs
 
 def ls_recall(img_lvs, img_bin, pred, threshold):
     """Calculates the low-salience recall (LSRecall).
@@ -337,7 +328,7 @@ def ls_recall(img_lvs, img_bin, pred, threshold):
     img_hard = (img_lvs <= threshold) & (img_bin > 0)
     if img_hard.sum() == 0:
         # No vessel pixels
-        return 0
+        return None
 
     # Recovered low-salience pixels
     pred_hard = pred[img_hard>0]
@@ -346,6 +337,74 @@ def ls_recall(img_lvs, img_bin, pred, threshold):
     recall = pred_hard.sum()/pred_hard.size
 
     return recall.item()
+
+def average_ls_recall(img_lvs, img_bin, pred, max_threshold = None, eps=0.01):
+    """Calculates the mean low-salience recall (mLSR) for all thresholds between 0 and `max_threshold`. 
+    If `max_threshold` is None, the average is calculated for all thresholds between 0 and 1.
+    
+    Args:
+    img_lvs: image containing LVS values
+    img_bin: binary image containing vessel annotations
+    pred: binary image containing predictions of an algorithm
+    max_threshold: maximum salience threshold to consider for calculating the average LSRecall. Optional.
+    eps: threshold for considering that the recall is constant for different salience thresholds. Optional.
+
+    Returns:
+    The mLSR for all thresholds between 0 and `max_threshold`.
+    """
+
+    # Max threshold for calculating ls_recall    
+    if max_threshold is None:
+        max_threshold_calc = 1.0
+    else:
+        max_threshold_calc = max_threshold
+
+    step = 0.01
+
+    # Minimum threshold for calculating ls_recall
+    min_threshold_calc = step
+    thresholds = np.arange(min_threshold_calc, max_threshold_calc + 1e-6, step)
+
+    recalls = []
+    first_valid_idx = None
+    for idx, threshold in enumerate(thresholds):
+        recall = ls_recall(img_lvs, img_bin, pred, threshold)
+        if recall is None:
+            recall = np.nan
+        else:
+            # First threshold for which there are valid low-salience pixels
+            if first_valid_idx is None:
+                first_valid_idx = idx
+        recalls.append(recall)
+
+    if first_valid_idx is None:
+        # No low-salience pixels
+        return None
+    
+    first_threshold = thresholds[first_valid_idx]
+
+    final_recalls = recalls
+    if max_threshold is None:
+        # Remove thresholds for which recall is constant
+        indices = np.nonzero(np.abs(np.diff(recalls)) > eps)[0]
+        if len(indices) == 0:
+            # If recall is constant for all thresholds, keep only first value
+            final_recalls = recalls[:first_valid_idx+1]
+            last_threshold = first_threshold
+        else:
+            last_idx = indices[-1]
+            final_recalls = final_recalls[:last_idx + 2]
+            last_threshold = thresholds[last_idx + 1]
+    else:
+        last_threshold = max_threshold
+    final_recalls = final_recalls[first_valid_idx:]
+
+    ideal_area = last_threshold - first_threshold + step
+    actual_area = np.sum(final_recalls) * step
+
+    # This is the same as the average recall for thresholds between first_threshold and last_threshold
+    m_lsr = actual_area / ideal_area
+    return m_lsr
 
 #### Auxiliary functions for visualization ####
 
@@ -361,7 +420,8 @@ def plot_sections(img_bin, graph, contour, closest_points):
     plt.figure()
     plt.subplot(111)
     plt.imshow(img_bin+img_graph, 'gray')
-    for path, closest_points_path in zip(paths, closest_points):
+    for v1, v2, key, path in graph.edges(data='path', keys=True):
+        closest_points_path = closest_points[(v1, v2, key)]
         for point_idx in range(len(path)):
             p = path[point_idx]
             nei1_idx, nei2_idx = closest_points_path[point_idx]
@@ -384,9 +444,11 @@ def plot_sampling_regions(section_data, img_bin, graph, n=20):
     plt.subplot(111)
     plt.imshow(img_bin+img_graph, 'gray')
 
+    section_data_l = list(section_data.values())
+
     for _ in range(n):
-        seg_idx = np.random.randint(0, len(section_data))
-        section_data_path = section_data[seg_idx]
+        seg_idx = np.random.randint(0, len(section_data_l))
+        section_data_path = section_data_l[seg_idx]
         pix_idx = np.random.randint(0, len(section_data_path))
         pix_data = section_data_path[pix_idx]
 

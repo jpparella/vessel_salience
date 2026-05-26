@@ -8,6 +8,3 @@ PIL==10.3.0
 shapely==2.0.4
 networkx==3.3
 natsort==8.4.0
-oiffile==2013.08.02
-tifffile==2024.5.10
-czifile==2019.7.2

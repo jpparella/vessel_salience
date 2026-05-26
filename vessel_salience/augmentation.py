@@ -7,10 +7,7 @@ import scipy.ndimage as ndi
 import skimage.morphology
 import skimage.draw
 import cv2
-from .pyvane.graph.creation import create_graph as create_graph_pv
-from .pyvane.graph import adjustment as net_adjust
-from .pyvane.image import Image
-
+from pyvane.graph.creation import create_graph_with_mapping
 
 def extract_full_length(graph):
     """Extract edge segments length."""
@@ -123,18 +120,12 @@ def get_valid_pixels(graph_edges, cut):
 
     return valid_pixels
 
-def create_graph(label, adjust):
+def get_graph(label):
     """Create graph from a binary image."""
 
     label = np.clip(label, 0, 1)
     img_skel = skimage.morphology.skeletonize(label, method='lee')
-    # Convert back to PyVaNe
-    data_skel = Image(img_skel)
-    graph_vessel = create_graph_pv(data_skel)
-    if adjust:
-        graph_vessel = net_adjust.adjust_graph(graph_vessel, 0)
-
-    return graph_vessel
+    return create_graph_with_mapping(img_skel, label, length_threshold=0.)
 
 def get_crop(img, point, rqi_len):
     """Crop image around point."""
@@ -265,7 +256,8 @@ def expand_line(img_skel, img_skel_aug, img_origin, img_label, img_seg,
         img_only_back = np.zeros_like(img_aug)
         sat_coords_on_back = None
         if len(coords_valid_back) == 0:
-            print('Unable to find a valid background for RQI')            
+            #img_sat[:] = 0
+            print('Unable to find a valid background for RQI')
             break
 
         # Center of candidate region
@@ -304,7 +296,7 @@ def expand_line(img_skel, img_skel_aug, img_origin, img_label, img_seg,
     return img_aug, debug
 
 def create_image(img_origin, img_label, rqi_len_interv, min_len_interv, 
-                 n_rqi_interv, back_threshold, rng_seed=None, 
+                 n_rqi_interv, back_threshold, rng_seed=None, min_crop=None,
                  highlight_center=False):
     """Augment image using the method proposed in the paper.
 
@@ -330,13 +322,17 @@ def create_image(img_origin, img_label, rqi_len_interv, min_len_interv,
     if rng_seed is not None:
         random.seed(rng_seed)
 
-    graph = create_graph(img_label, True)
+    graph, labeled_image, id_cl_map = get_graph(img_label)
+    img_label = labeled_image > 0
     graph_edges = list(graph.edges(data=True))
+    for v1, v2, data in graph_edges:
+        data['path'] = [tuple(p) for p in data['path'].tolist()]
 
     # Get how many segments can be augmented
     valid_edges_pixels = get_valid_pixels(graph_edges, rqi_len_interv[0]//2)
     # Augment at most len(valid_edges_pixels) segments
     n_rqi_possible = len(valid_edges_pixels)
+    print(f'Number of segments that can be augmented: {n_rqi_possible}')
     n_rqi_interv = (
         min([n_rqi_interv[0], n_rqi_possible]),
         min([n_rqi_interv[1], n_rqi_possible])
@@ -347,6 +343,7 @@ def create_image(img_origin, img_label, rqi_len_interv, min_len_interv,
 
     img_aug = img_origin.copy()
     img_augmented_segs = np.zeros_like(img_origin)
+    img_sat = np.zeros_like(img_origin)
 
     debug_full = []
     edges_drawn = []
@@ -363,6 +360,11 @@ def create_image(img_origin, img_label, rqi_len_interv, min_len_interv,
                 if edge_index not in edges_drawn:
                     valid = True
                     edges_drawn.append(edge_index)
+
+        if min_crop is None:
+            min_crop_used = rqi_len
+        else:
+            min_crop_used = min_crop
 
         max_min_len = min([min_len_interv[1], rqi_len-5])
         min_len = random.randint(min_len_interv[0], max_min_len)
@@ -386,12 +388,13 @@ def create_image(img_origin, img_label, rqi_len_interv, min_len_interv,
 
         img_skel = np.zeros(img_label.shape, dtype=np.uint8)
         for point in skel_aug_points:
-            img_skel[point] = 128
-            img_augmented_segs[point] = 255
+            img_skel[tuple(point)] = 128
+            img_augmented_segs[tuple(point)] = 255
 
-        img_aug_crop = get_crop(img_aug, pc, rqi_len).copy()
-        img_label_crop = get_crop(img_label, pc, rqi_len)
-        img_seg_crop = get_crop(img_seg, pc, rqi_len)
+        img_aug_crop = get_crop(img_aug, pc, min_crop_used).copy()
+        img_label_crop = get_crop(img_label, pc, min_crop_used)
+        img_seg_crop = get_crop(img_seg, pc, min_crop_used)
+        img_sat_crop = get_crop(img_sat, pc, min_crop_used)
 
         # Initial and final points of minimum intensity region
         p_min_1_idx, p_min_2_idx = point_from_dist(edge_path, pc_idx,
@@ -414,16 +417,16 @@ def create_image(img_origin, img_label, rqi_len_interv, min_len_interv,
         for idx, (r, c) in enumerate(skel_aug_points):
             img_skel_aug[r, c] = attenuation_coeff[idx]
             
-        img_skel_crop = get_crop(img_skel, pc, rqi_len)
-        img_skel_aug_crop = get_crop(img_skel_aug, pc, rqi_len)
+        img_skel_crop = get_crop(img_skel, pc, min_crop_used)
+        img_skel_aug_crop = get_crop(img_skel_aug, pc, min_crop_used)
         
         img_aug_crop_new, debug_expand = expand_line(img_skel_crop, img_skel_aug_crop, 
                                                 img_aug_crop, 
                                                 img_label_crop, img_seg_crop,
                                                 back_threshold)
-        
-        img_aug = crop_alter(img_aug, img_aug_crop_new, pc, rqi_len)
-    
+
+        img_aug = crop_alter(img_aug, img_aug_crop_new, pc, min_crop_used)
+
         # For debugging
         if highlight_center:
             coords = neighbors(pc, img_aug.shape)
@@ -434,7 +437,10 @@ def create_image(img_origin, img_label, rqi_len_interv, min_len_interv,
         for cord in edge_path:        
             freq_vaso.append(img_aug[cord[0]][cord[1]])
         vessel_int_new = freq_vaso
-    
+
+        img_sat_crop = np.logical_or(img_sat_crop, debug_expand[1])
+        img_sat = crop_alter(img_sat, img_sat_crop, pc, min_crop_used)
+
         debug = (img_aug_crop, img_label_crop, img_skel_crop, img_skel_aug_crop, 
                  img_seg_crop, 
                  rqi_len, attenuation_coeff, vessel_int_plot, vessel_int_new, 
@@ -443,5 +449,5 @@ def create_image(img_origin, img_label, rqi_len_interv, min_len_interv,
         debug_full.append(debug)
         #------
 
-    return img_aug, debug_full, graph, img_augmented_segs
+    return img_aug, debug_full, graph, img_augmented_segs, img_sat
  

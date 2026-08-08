@@ -8,4 +8,4 @@ The script `vessel_salience/augmentation.py` can be used for augmenting blood ve
 
 Required packages are indicated in the file `requirements.txt`.
 
-The Jupyter notebooks in the folder `notebooks` show examples for running the scripts. They are still a work in progress but show basic functionality.
+The Jupyter notebooks in the folder `notebooks` show examples for running the scripts. 

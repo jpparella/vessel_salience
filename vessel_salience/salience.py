@@ -177,7 +177,7 @@ def get_statistics(section_data):
             intves = pix.get('int_vessel')
 
             # If grayscale image, expand arrays from n to nx1. To be compatible with
-            # color images havingarrays of size nx3
+            # color images having arrays of size nx3
             if backg.ndim==1:
                 backg = np.expand_dims(backg, axis=1)
                 intves = np.expand_dims(intves, axis=1)
@@ -311,7 +311,7 @@ def lvs(img, img_bin, radius, k=50, n=5, roi=None, return_skel=False):
     
     return img_lvs
 
-def ls_recall(img_lvs, img_bin, pred, threshold):
+def ls_recall(img_lvs, img_bin, pred, threshold, min_num_pixels=600):
     """Calculates the low-salience recall (LSRecall).
 
     Args:
@@ -326,8 +326,8 @@ def ls_recall(img_lvs, img_bin, pred, threshold):
 
     # Low-salience pixels
     img_hard = (img_lvs <= threshold) & (img_bin > 0)
-    if img_hard.sum() == 0:
-        # No vessel pixels
+    if img_hard.sum() < min_num_pixels:
+        # No valid pixels
         return None
 
     # Recovered low-salience pixels
